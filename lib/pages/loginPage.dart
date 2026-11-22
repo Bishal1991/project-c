@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart
-import 'signup_page.dart';
+import '../services/auth_service.dart';
+import 'home_page.dart';
 
 class Loginpage extends StatefulWidget {
   const Loginpage({super.key});
@@ -53,10 +53,8 @@ class _LoginpageState extends State<Loginpage> {
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (context) =>
-              const Placeholder(child: Text("Home page"))),
-              (route) => false,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+          (route) => false,
         );
       }
     } catch (e) {
@@ -83,10 +81,8 @@ class _LoginpageState extends State<Loginpage> {
       if (userCred != null && mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-              builder: (context) =>
-              const Placeholder(child: Text("Home page"))),
-              (route) => false,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+          (route) => false,
         );
       }
     } catch (e) {
