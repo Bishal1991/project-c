@@ -7,7 +7,7 @@ import '../models/user_model.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '910361176882-7mqvjmdtlthdug9kf5hjb3i6ko0gumg1.apps.googleusercontent.com',
+    serverClientId: '717226428903-2s85228cv2s7h957lr8uju0j8d627kok.apps.googleusercontent.com',
   );
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 

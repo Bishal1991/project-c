@@ -240,7 +240,7 @@ class _LoginpageState extends State<Loginpage> {
                             Text(
                               'Log in to continue where you left off.',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white,
                                 fontSize: 16,
                               ),
                             ),
@@ -428,7 +428,7 @@ class _LoginpageState extends State<Loginpage> {
                                     onPressed: busy
                                         ? null
                                         : () {
-                                      // TODO: navigate to your sign up page
+                                      // TODO: navigate to sign up page
                                     },
                                     style: TextButton.styleFrom(
                                       foregroundColor: _accent,
