@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import 'home_page.dart';
 
-class Loginpage extends StatefulWidget {
-  const Loginpage({super.key});
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
 
   @override
-  State<Loginpage> createState() => _LoginpageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginpageState extends State<Loginpage> {
+class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
@@ -323,7 +323,7 @@ class _LoginpageState extends State<Loginpage> {
                                     backgroundColor: _ink,
                                     foregroundColor: Colors.white,
                                     disabledBackgroundColor:
-                                    _ink.withOpacity(0.6),
+                                    _ink.withValues(alpha: 0.6),
                                     elevation: 0,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14),

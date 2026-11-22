@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:newzen_mitjyu/pages/home_page.dart';
 import '../firebase_options.dart';
-import 'pages/loginPage.dart';
+import 'pages/login_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,7 +36,7 @@ class ChatApp extends StatelessWidget {
           if (snapshot.hasData && snapshot.data != null) {
             return const HomePage();
           }
-          return const Loginpage();
+          return const LoginPage();
         },
       ),
     );

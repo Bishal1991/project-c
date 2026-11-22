@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/chat_list_widget.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,12 +20,7 @@ class _HomePageState extends State<HomePage> {
       ),
     ),
     // Chat tab
-    const Center(
-      child: Text(
-        'Chat',
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
-    ),
+    const ChatListWidget(),
     // Bonds tab
     const Center(
       child: Text(
