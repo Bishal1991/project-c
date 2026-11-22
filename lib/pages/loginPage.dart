@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'home_page.dart';
 
 class Loginpage extends StatefulWidget {
   const Loginpage({super.key});
@@ -46,7 +47,7 @@ class _LoginpageState extends State<Loginpage> {
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const Placeholder(child: Text("Home page"),)),
+          MaterialPageRoute(builder: (context) => const HomePage()),
           (route) => false,
         );
       }
@@ -74,7 +75,7 @@ class _LoginpageState extends State<Loginpage> {
       if (userCred != null && mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const Placeholder(child: Text("Home page"))),
+          MaterialPageRoute(builder: (context) => const HomePage()),
           (route) => false,
         );
       }
@@ -161,6 +162,12 @@ class _LoginpageState extends State<Loginpage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold();
+    return Scaffold(
+      body: Column(
+        children: [
+
+        ],
+      ),
+    );
   }
 }
