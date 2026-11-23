@@ -38,8 +38,6 @@ dependencies:
   firebase_core: ^3.8.0
   google_sign_in: ^6.2.2
   cloud_firestore: ^5.6.5
-  smart_date_formatter: ^2.6.1
-  share_plus: ^13.3.1
   intl: ^0.19.0
 
 dev_dependencies:

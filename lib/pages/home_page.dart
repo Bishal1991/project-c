@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import '../widgets/chat_list_widget.dart';
+import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,40 +11,148 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final _authService = AuthService();
   int _currentIndex = 0;
 
-  final List<Widget> _pages = [
-    // Home tab (empty as requested)
-    const Center(
-      child: Text(
-        'Home Page',
-        style: TextStyle(fontSize: 18, color: Colors.grey),
+  @override
+  void initState() {
+    super.initState();
+    _authService.syncUserProfile();
+  }
+
+  void _showEditNameDialog() {
+    final nameController = TextEditingController(
+      text: _authService.currentUser?.displayName ?? '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Display Name'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            hintText: 'Enter your name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              if (newName.isNotEmpty) {
+                await _authService.updateDisplayName(newName);
+                await _authService.syncUserProfile(displayName: newName);
+                if (mounted) setState(() {});
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
       ),
-    ),
-    // Chat tab
-    const ChatListWidget(),
-    // Bonds tab
-    const Center(
-      child: Text(
-        'Bonds',
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
-    ),
-    // Events tab
-    const Center(
-      child: Text(
-        'Events',
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
-    ),
-    // Profile tab
-    const Center(
-      child: Text(
-        'Profile',
-        style: TextStyle(fontSize: 18, color: Colors.grey),
-      ),
-    ),
-  ];
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    await _authService.signOut();
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+        (route) => false,
+      );
+    }
+  }
+
+  Widget _buildProfileTab() {
+    final user = _authService.currentUser;
+    final name = user?.displayName?.isNotEmpty == true
+        ? user!.displayName!
+        : 'User';
+
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        CircleAvatar(
+          radius: 36,
+          child: Text(
+            name[0].toUpperCase(),
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: Text(
+            name,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+        if (user?.email != null) ...[
+          const SizedBox(height: 4),
+          Center(
+            child: Text(user!.email!, style: const TextStyle(color: Colors.grey)),
+          ),
+        ],
+        if (user?.phoneNumber != null) ...[
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              user!.phoneNumber!,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
+        ListTile(
+          leading: const Icon(Icons.edit),
+          title: const Text('Edit Display Name'),
+          onTap: _showEditNameDialog,
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout, color: Colors.redAccent),
+          title: const Text('Logout', style: TextStyle(color: Colors.redAccent)),
+          onTap: _handleLogout,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTab(int index) {
+    switch (index) {
+      case 0:
+        return const Center(
+          child: Text(
+            'Home Page',
+            style: TextStyle(fontSize: 18, color: Colors.grey),
+          ),
+        );
+      case 1:
+        return const ChatListWidget();
+      case 2:
+        return const Center(
+          child: Text(
+            'Bonds',
+            style: TextStyle(fontSize: 18, color: Colors.grey),
+          ),
+        );
+      case 3:
+        return const Center(
+          child: Text(
+            'Events',
+            style: TextStyle(fontSize: 18, color: Colors.grey),
+          ),
+        );
+      case 4:
+        return _buildProfileTab();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +161,7 @@ class _HomePageState extends State<HomePage> {
         title: Text(_getTabTitle(_currentIndex)),
         elevation: 1,
       ),
-      body: _pages[_currentIndex],
+      body: _buildTab(_currentIndex),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
