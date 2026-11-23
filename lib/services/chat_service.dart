@@ -12,41 +12,6 @@ class ChatService {
     return uid1.compareTo(uid2) < 0 ? '${uid1}_$uid2' : '${uid2}_$uid1';
   }
 
-  // Search users by email or phone number
-  Future<List<UserModel>> searchUsers(String query) async {
-    final myUid = currentUserId;
-    final cleanQuery = query.trim().toLowerCase();
-    if (cleanQuery.isEmpty) return [];
-
-    final Set<String> foundUids = {};
-    final List<UserModel> results = [];
-
-    final snapshot = await _firestore.collection('users').limit(50).get();
-
-    for (var doc in snapshot.docs) {
-      if (doc.id == myUid) continue; // Exclude self
-      final data = doc.data();
-      final user = UserModel.fromMap(data, doc.id);
-
-      final email = (user.email ?? '').toLowerCase();
-      final phone = (user.phoneNumber ?? '').replaceAll(' ', '');
-      final name = user.displayName.toLowerCase();
-
-      final searchPhone = cleanQuery.replaceAll(' ', '');
-
-      if (email.contains(cleanQuery) ||
-          phone.contains(searchPhone) ||
-          name.contains(cleanQuery)) {
-        if (!foundUids.contains(user.uid)) {
-          foundUids.add(user.uid);
-          results.add(user);
-        }
-      }
-    }
-
-    return results;
-  }
-
   // Create or get 1-on-1 chat room
   Future<String> getOrCreateChatRoom(UserModel otherUser) async {
     final myUser = _auth.currentUser;
@@ -148,6 +113,13 @@ class ChatService {
     );
 
     await batch.commit();
+
+    // Keep bond messageCount in sync if a bond exists for this pair
+    _firestore
+        .collection('bonds')
+        .doc(chatId)
+        .update({'messageCount': FieldValue.increment(1)})
+        .catchError((_) {});
   }
 
   // Stream of conversations where current user is a participant (No composite index needed)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../widgets/bonds_widget.dart';
 import '../widgets/chat_list_widget.dart';
 import 'login_page.dart';
 
@@ -134,12 +135,7 @@ class _HomePageState extends State<HomePage> {
       case 1:
         return const ChatListWidget();
       case 2:
-        return const Center(
-          child: Text(
-            'Bonds',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-        );
+        return const BondsWidget();
       case 3:
         return const Center(
           child: Text(
@@ -156,10 +152,22 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isBondsTab = _currentIndex == 2;
     return Scaffold(
+      backgroundColor: isBondsTab ? const Color(0xFF0F0D1D) : null,
       appBar: AppBar(
-        title: Text(_getTabTitle(_currentIndex)),
-        elevation: 1,
+        title: Text(
+          isBondsTab ? 'Your bonds' : _getTabTitle(_currentIndex),
+          style: isBondsTab
+              ? const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                )
+              : null,
+        ),
+        backgroundColor: isBondsTab ? const Color(0xFF0F0D1D) : null,
+        elevation: isBondsTab ? 0 : 1,
       ),
       body: _buildTab(_currentIndex),
       bottomNavigationBar: BottomNavigationBar(

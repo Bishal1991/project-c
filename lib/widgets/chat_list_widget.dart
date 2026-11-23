@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
+import '../services/bond_service.dart';
 import '../services/chat_service.dart';
 import '../pages/chat_conversation_page.dart';
 
@@ -13,6 +14,7 @@ class ChatListWidget extends StatefulWidget {
 
 class _ChatListWidgetState extends State<ChatListWidget> {
   final _chatService = ChatService();
+  final _bondService = BondService();
   final _searchController = TextEditingController();
   List<UserModel> _searchResults = [];
   bool _isSearching = false;
@@ -27,8 +29,8 @@ class _ChatListWidgetState extends State<ChatListWidget> {
     }
     setState(() => _isSearching = true);
     try {
-      final results = await _chatService.searchUsers(query);
-      setState(() => _searchResults = results);
+      final results = await _bondService.searchBondedUsers(query);
+      if (mounted) setState(() => _searchResults = results);
     } catch (e) {
       debugPrint('Search failed: $e');
     }
@@ -52,7 +54,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
             controller: _searchController,
             onChanged: _searchUsers,
             decoration: InputDecoration(
-              hintText: 'Search user by name or email...',
+              hintText: 'Search bonded friends...',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
