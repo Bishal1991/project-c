@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/user_model.dart';
@@ -36,7 +35,11 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
   }
 
   Future<void> _initChat() async {
-    await _chatService.getOrCreateChatRoom(widget.otherUser);
+    try {
+      await _chatService.getOrCreateChatRoom(widget.otherUser);
+    } catch (e) {
+      debugPrint('initChat warning: $e');
+    }
     if (mounted) setState(() => _isInit = true);
   }
 
@@ -70,15 +73,23 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
     }
   }
 
-  String _formatTime(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-    final dt = timestamp.toDate();
+  String _formatTime(dynamic rawTimestamp) {
+    if (rawTimestamp == null) return '';
+    final dt = rawTimestamp is String
+        ? DateTime.tryParse(rawTimestamp)?.toLocal()
+        : null;
+    if (dt == null) return '';
     return DateFormat('hh:mm a').format(dt);
   }
 
   @override
   Widget build(BuildContext context) {
     final myUid = _chatService.currentUserId;
+    final subtitle = widget.otherUser.culturalLabel.isNotEmpty
+        ? widget.otherUser.culturalLabel
+        : (widget.otherUser.phoneNumber ??
+            widget.otherUser.email ??
+            'NewZen Mitjyu bond');
 
     return Scaffold(
       backgroundColor: const Color(0xFFECE5DD),
@@ -108,11 +119,14 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                 children: [
                   Text(
                     widget.otherUser.displayName,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    widget.otherUser.phoneNumber ?? widget.otherUser.email ?? 'eGuff contact',
+                    subtitle,
                     style: const TextStyle(fontSize: 12, color: Colors.white70),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -124,9 +138,8 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
       ),
       body: Column(
         children: [
-          // Messages stream
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _chatService.getMessagesStream(_activeChatId),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
@@ -139,22 +152,26 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                   );
                 }
 
-                if (snapshot.connectionState == ConnectionState.waiting && !_isInit) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !_isInit) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final docs = snapshot.data?.docs ?? [];
+                final docs = snapshot.data ?? [];
 
                 if (docs.isEmpty) {
                   return Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        'Say hello to ${widget.otherUser.displayName}! 👋',
+                        'Say Namaste to ${widget.otherUser.displayName}!',
                         style: const TextStyle(color: Colors.black87),
                       ),
                     ),
@@ -163,16 +180,20 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
 
                 return ListView.builder(
                   reverse: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 12,
+                  ),
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
-                    final data = docs[index].data();
+                    final data = docs[index];
                     final isMe = data['senderId'] == myUid;
                     final text = data['text'] as String? ?? '';
-                    final timestamp = data['timestamp'] as Timestamp?;
+                    final timestamp = data['timestamp'];
 
                     return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment:
+                          isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         constraints: BoxConstraints(
                           maxWidth: MediaQuery.of(context).size.width * 0.78,
@@ -189,8 +210,10 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(10),
                             topRight: const Radius.circular(10),
-                            bottomLeft: isMe ? const Radius.circular(10) : Radius.zero,
-                            bottomRight: isMe ? Radius.zero : const Radius.circular(10),
+                            bottomLeft:
+                                isMe ? const Radius.circular(10) : Radius.zero,
+                            bottomRight:
+                                isMe ? Radius.zero : const Radius.circular(10),
                           ),
                           boxShadow: [
                             BoxShadow(
@@ -206,7 +229,10 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                           children: [
                             Text(
                               text,
-                              style: const TextStyle(fontSize: 15, color: Colors.black87),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.black87,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Padding(
@@ -241,8 +267,6 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
               },
             ),
           ),
-
-          // Input field bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             color: Colors.transparent,
@@ -268,8 +292,8 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                         maxLines: null,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: const InputDecoration(
-                            hintText: 'Type a message...',
-                            border: InputBorder.none,
+                          hintText: 'Type a message...',
+                          border: InputBorder.none,
                         ),
                         onSubmitted: (_) => _handleSend(),
                       ),

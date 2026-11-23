@@ -13,7 +13,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _authService = AuthService();
-  int _currentIndex = 0;
+  int _currentIndex = 1; // Default to Bonds tab so user sees their Mit Journey
+
+  static const _darkBg = Color(0xFF0F0D1D);
+  static const _navBg = Color(0xFF131124);
+  static const _purple = Color(0xFF7C5CFC);
+  static const _muted = Color(0xFF9A96B0);
 
   @override
   void initState() {
@@ -47,7 +52,6 @@ class _HomePageState extends State<HomePage> {
               final newName = nameController.text.trim();
               if (newName.isNotEmpty) {
                 await _authService.updateDisplayName(newName);
-                await _authService.syncUserProfile(displayName: newName);
                 if (mounted) setState(() {});
               }
               if (ctx.mounted) Navigator.pop(ctx);
@@ -81,9 +85,14 @@ class _HomePageState extends State<HomePage> {
       children: [
         CircleAvatar(
           radius: 36,
+          backgroundColor: _purple,
           child: Text(
             name[0].toUpperCase(),
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -96,7 +105,10 @@ class _HomePageState extends State<HomePage> {
         if (user?.email != null) ...[
           const SizedBox(height: 4),
           Center(
-            child: Text(user!.email!, style: const TextStyle(color: Colors.grey)),
+            child: Text(
+              user!.email!,
+              style: const TextStyle(color: Colors.grey),
+            ),
           ),
         ],
         if (user?.phoneNumber != null) ...[
@@ -116,33 +128,37 @@ class _HomePageState extends State<HomePage> {
         ),
         ListTile(
           leading: const Icon(Icons.logout, color: Colors.redAccent),
-          title: const Text('Logout', style: TextStyle(color: Colors.redAccent)),
+          title: const Text(
+            'Logout',
+            style: TextStyle(color: Colors.redAccent),
+          ),
           onTap: _handleLogout,
         ),
       ],
     );
   }
 
+  // Order matches mockup: 0=Home, 1=Bonds, 2=Events, 3=Chat, 4=Me
   Widget _buildTab(int index) {
     switch (index) {
       case 0:
         return const Center(
           child: Text(
-            'Home Page',
+            'Home (Discover coming next)',
             style: TextStyle(fontSize: 18, color: Colors.grey),
           ),
         );
       case 1:
-        return const ChatListWidget();
-      case 2:
         return const BondsWidget();
-      case 3:
+      case 2:
         return const Center(
           child: Text(
             'Events',
             style: TextStyle(fontSize: 18, color: Colors.grey),
           ),
         );
+      case 3:
+        return const ChatListWidget();
       case 4:
         return _buildProfileTab();
       default:
@@ -150,23 +166,40 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  String _getTabTitle(int index) {
+    switch (index) {
+      case 0:
+        return 'Home';
+      case 1:
+        return 'Your bonds';
+      case 2:
+        return 'Events';
+      case 3:
+        return 'Chat';
+      case 4:
+        return 'Me';
+      default:
+        return '';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isBondsTab = _currentIndex == 2;
+    final isBondsTab = _currentIndex == 1;
     return Scaffold(
-      backgroundColor: isBondsTab ? const Color(0xFF0F0D1D) : null,
+      backgroundColor: isBondsTab ? _darkBg : null,
       appBar: AppBar(
         title: Text(
-          isBondsTab ? 'Your bonds' : _getTabTitle(_currentIndex),
+          _getTabTitle(_currentIndex),
           style: isBondsTab
               ? const TextStyle(
-                  fontSize: 24,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 )
               : null,
         ),
-        backgroundColor: isBondsTab ? const Color(0xFF0F0D1D) : null,
+        backgroundColor: isBondsTab ? _darkBg : null,
         elevation: isBondsTab ? 0 : 1,
       ),
       body: _buildTab(_currentIndex),
@@ -174,8 +207,9 @@ class _HomePageState extends State<HomePage> {
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
+        backgroundColor: _navBg,
+        selectedItemColor: _purple,
+        unselectedItemColor: _muted,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -183,44 +217,27 @@ class _HomePageState extends State<HomePage> {
             label: 'Home',
           ),
           BottomNavigationBarItem(
+            icon: Icon(Icons.favorite_border),
+            activeIcon: Icon(Icons.favorite),
+            label: 'Bonds',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_today_outlined),
+            activeIcon: Icon(Icons.calendar_today),
+            label: 'Events',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.chat_bubble_outline),
             activeIcon: Icon(Icons.chat_bubble),
             label: 'Chat',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            activeIcon: Icon(Icons.people),
-            label: 'Bonds',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event_outlined),
-            activeIcon: Icon(Icons.event),
-            label: 'Events',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
             activeIcon: Icon(Icons.person),
-            label: 'Profile',
+            label: 'Me',
           ),
         ],
       ),
     );
-  }
-
-  String _getTabTitle(int index) {
-    switch (index) {
-      case 0:
-        return 'Home';
-      case 1:
-        return 'Chat';
-      case 2:
-        return 'Bonds';
-      case 3:
-        return 'Events';
-      case 4:
-        return 'Profile';
-      default:
-        return '';
-    }
   }
 }

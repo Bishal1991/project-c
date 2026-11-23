@@ -1,9 +1,8 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
+import '../pages/chat_conversation_page.dart';
 import '../services/bond_service.dart';
 import '../services/chat_service.dart';
-import '../pages/chat_conversation_page.dart';
 
 class ChatListWidget extends StatefulWidget {
   const ChatListWidget({super.key});
@@ -44,8 +43,6 @@ class _ChatListWidgetState extends State<ChatListWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final myUid = _chatService.currentUserId;
-
     return Column(
       children: [
         Padding(
@@ -77,19 +74,25 @@ class _ChatListWidgetState extends State<ChatListWidget> {
         if (_isSearching && _searchController.text.isNotEmpty) ...[
           Expanded(
             child: _searchResults.isEmpty
-                ? const Center(child: Text('No users found'))
+                ? const Center(child: Text('No bonded friends match your search'))
                 : ListView.builder(
                     itemCount: _searchResults.length,
                     itemBuilder: (context, index) {
                       final user = _searchResults[index];
                       return ListTile(
                         leading: CircleAvatar(
-                          child: Text(user.displayName.isNotEmpty
-                              ? user.displayName[0].toUpperCase()
-                              : 'U'),
+                          child: Text(
+                            user.displayName.isNotEmpty
+                                ? user.displayName[0].toUpperCase()
+                                : 'U',
+                          ),
                         ),
                         title: Text(user.displayName),
-                        subtitle: Text(user.email ?? user.phoneNumber ?? ''),
+                        subtitle: Text(
+                          user.culturalLabel.isNotEmpty
+                              ? user.culturalLabel
+                              : (user.email ?? user.phoneNumber ?? ''),
+                        ),
                         onTap: () {
                           Navigator.push(
                             context,
@@ -105,22 +108,26 @@ class _ChatListWidgetState extends State<ChatListWidget> {
           ),
         ] else ...[
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _chatService.getUserChatsStream(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
-                      child: Text('Error loading chats: ${snapshot.error}'));
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Error loading chats: ${snapshot.error}'),
+                    ),
+                  );
                 }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
+                final chats = snapshot.data ?? [];
+                if (chats.isEmpty) {
                   return const Center(
                     child: Text(
-                      'No chats yet.\nSearch above to start chatting!',
+                      'No bonded chats yet.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.grey, fontSize: 16),
                     ),
@@ -128,33 +135,34 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                 }
 
                 return ListView.builder(
-                  itemCount: docs.length,
+                  itemCount: chats.length,
                   itemBuilder: (context, index) {
-                    final chatData = docs[index].data();
+                    final chatData = chats[index];
                     final chatId = chatData['chatId'] as String? ?? '';
                     final lastMessage =
                         chatData['lastMessage'] as String? ?? '';
-                    final participantDetails =
-                        chatData['participantDetails'] as Map<String, dynamic>? ??
-                            {};
-
-                    UserModel? otherUser;
-                    participantDetails.forEach((uid, details) {
-                      if (uid != myUid && details is Map<String, dynamic>) {
-                        otherUser = UserModel.fromMap(details, uid);
-                      }
-                    });
-
-                    if (otherUser == null) return const SizedBox.shrink();
+                    final otherUser = UserModel(
+                      uid: chatData['otherUid'] as String? ?? '',
+                      displayName: chatData['otherName'] as String? ?? 'User',
+                      email: chatData['otherEmail'] as String?,
+                      phoneNumber: chatData['otherPhone'] as String?,
+                      photoUrl: chatData['otherPhoto'] as String?,
+                      community: chatData['otherCommunity'] as String?,
+                      region: chatData['otherRegion'] as String?,
+                    );
 
                     return ListTile(
                       leading: CircleAvatar(
-                        child: Text(otherUser!.displayName.isNotEmpty
-                            ? otherUser!.displayName[0].toUpperCase()
-                            : 'U'),
+                        child: Text(
+                          otherUser.displayName.isNotEmpty
+                              ? otherUser.displayName[0].toUpperCase()
+                              : 'U',
+                        ),
                       ),
-                      title: Text(otherUser!.displayName,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text(
+                        otherUser.displayName,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       subtitle: Text(
                         lastMessage.isNotEmpty ? lastMessage : 'Tap to chat',
                         maxLines: 1,
@@ -165,7 +173,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                           context,
                           MaterialPageRoute(
                             builder: (context) => ChatConversationPage(
-                              otherUser: otherUser!,
+                              otherUser: otherUser,
                               chatId: chatId,
                             ),
                           ),

@@ -1,10 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/bond_model.dart';
 import '../models/user_model.dart';
+import 'api_client.dart';
 
 class BondService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   String? get currentUserId => _auth.currentUser?.uid;
@@ -13,70 +12,37 @@ class BondService {
     final myUid = currentUserId;
     if (myUid == null) return const Stream.empty();
 
-    return _firestore
-        .collection('bonds')
-        .where('participants', arrayContains: myUid)
-        .snapshots()
-        .map((snap) {
-          final bonds = snap.docs.map(BondModel.fromDoc).toList();
-          bonds.sort((a, b) {
-            final stageCmp = b.stage.compareTo(a.stage);
-            return stageCmp != 0 ? stageCmp : b.createdAt.compareTo(a.createdAt);
-          });
-          return bonds;
-        });
+    return ApiClient.pollStream(() async {
+      final list = await ApiClient.get('/users/$myUid/bonds') as List<dynamic>;
+      return list
+          .map((item) => BondModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    });
   }
 
   // Search only among already bonded users (used by Chat searchbar)
-  // ponytail: filters user's own bonds client-side; fine for personal bond lists (<100)
   Future<List<UserModel>> searchBondedUsers(String query) async {
     final myUid = currentUserId;
-    final cleanQuery = query.trim().toLowerCase();
+    final cleanQuery = query.trim();
     if (myUid == null || cleanQuery.isEmpty) return [];
 
-    final searchPhone = cleanQuery.replaceAll(' ', '');
-    final snap = await _firestore
-        .collection('bonds')
-        .where('participants', arrayContains: myUid)
-        .get();
+    final encoded = Uri.encodeQueryComponent(cleanQuery);
+    final list =
+        await ApiClient.get('/users/$myUid/bonds/search?q=$encoded')
+            as List<dynamic>;
 
-    return snap.docs
-        .map((doc) => BondModel.fromDoc(doc).otherUser(myUid))
-        .where((user) {
-          if (user.uid.isEmpty) return false;
-          final name = user.displayName.toLowerCase();
-          final email = (user.email ?? '').toLowerCase();
-          final phone = (user.phoneNumber ?? '').replaceAll(' ', '');
-          return name.contains(cleanQuery) ||
-              email.contains(cleanQuery) ||
-              phone.contains(searchPhone);
-        })
-        .toList();
+    return list.map((item) {
+      final map = Map<String, dynamic>.from(item);
+      return UserModel.fromMap(map, map['uid'] as String? ?? '');
+    }).toList();
   }
 
-  // Both participants confirm to move Chinari -> Saathi -> Mit
+  // Both participants confirm to move Chinari (1) -> Saathi (2) -> Mit (3)
   Future<void> confirmStageAdvance(BondModel bond) async {
     final myUid = currentUserId;
     if (myUid == null || bond.stage >= 3) return;
-    if (bond.stageConfirmations.contains(myUid)) return;
 
-    final updatedConfirmations = [...bond.stageConfirmations, myUid];
-    final bothConfirmed = bond.participants.every(updatedConfirmations.contains);
-    final ref = _firestore.collection('bonds').doc(bond.bondId);
-
-    if (bothConfirmed) {
-      final nextStage = bond.stage + 1;
-      final label = BondModel.stageNames[nextStage - 1];
-      await ref.update({
-        'stage': nextStage,
-        'stageConfirmations': [],
-        'festivalsShared': FieldValue.increment(1),
-        'history': FieldValue.arrayUnion(['Reached $label']),
-      });
-    } else {
-      await ref.update({
-        'stageConfirmations': FieldValue.arrayUnion([myUid]),
-      });
-    }
+    await ApiClient.post('/bonds/${bond.bondId}/confirm', {'userUid': myUid});
+    ApiClient.notifyRefresh();
   }
 }

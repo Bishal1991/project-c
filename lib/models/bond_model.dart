@@ -1,13 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_model.dart';
 
 class BondModel {
   static const stageNames = ['Chinari', 'Saathi', 'Mit'];
 
   final String bondId;
-  final List<String> participants;
-  final Map<String, dynamic> participantDetails;
+  final UserModel partner;
   final int stage; // 1 = Chinari, 2 = Saathi, 3 = Mit
+  final String? matchReason;
   final DateTime createdAt;
   final int festivalsShared;
   final int messageCount;
@@ -19,10 +18,10 @@ class BondModel {
 
   BondModel({
     required this.bondId,
-    required this.participants,
-    required this.participantDetails,
+    required this.partner,
     required this.stage,
     required this.createdAt,
+    this.matchReason,
     this.festivalsShared = 0,
     this.messageCount = 0,
     this.upcomingEventTitle,
@@ -32,39 +31,44 @@ class BondModel {
     this.stageConfirmations = const [],
   });
 
-  int get daysBonded => DateTime.now().difference(createdAt).inDays.clamp(0, 99999);
+  int get daysBonded =>
+      DateTime.now().difference(createdAt).inDays.clamp(0, 99999);
 
   String? get nextStageName => stage < 3 ? stageNames[stage] : null;
 
-  UserModel otherUser(String myUid) {
-    final otherUid = participants.firstWhere(
-      (uid) => uid != myUid,
-      orElse: () => '',
-    );
-    final raw = participantDetails[otherUid];
-    final map = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-    return UserModel.fromMap(map, otherUid);
-  }
+  UserModel otherUser(String _) => partner;
 
-  factory BondModel.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
-    final ts = data['createdAt'];
-    final createdAt = ts is Timestamp ? ts.toDate() : DateTime.now();
+  factory BondModel.fromJson(Map<String, dynamic> json) {
+    final partner = UserModel(
+      uid: json['other_uid'] as String? ?? '',
+      displayName: json['other_name'] as String? ?? 'User',
+      email: json['other_email'] as String?,
+      phoneNumber: json['other_phone'] as String?,
+      photoUrl: json['other_photo'] as String?,
+      community: json['other_community'] as String?,
+      region: json['other_region'] as String?,
+    );
+
+    final createdRaw = json['created_at'];
+    final createdAt = createdRaw is String
+        ? (DateTime.tryParse(createdRaw) ?? DateTime.now())
+        : DateTime.now();
 
     return BondModel(
-      bondId: doc.id,
-      participants: List<String>.from(data['participants'] ?? []),
-      participantDetails:
-          Map<String, dynamic>.from(data['participantDetails'] ?? {}),
-      stage: (data['stage'] as num?)?.toInt().clamp(1, 3) ?? 1,
+      bondId: json['bond_id'] as String? ?? '',
+      partner: partner,
+      stage: (json['stage'] as num?)?.toInt().clamp(1, 3) ?? 1,
+      matchReason: json['match_reason'] as String?,
       createdAt: createdAt,
-      festivalsShared: (data['festivalsShared'] as num?)?.toInt() ?? 0,
-      messageCount: (data['messageCount'] as num?)?.toInt() ?? 0,
-      upcomingEventTitle: data['upcomingEventTitle'] as String?,
-      upcomingEventDate: data['upcomingEventDate'] as String?,
-      upcomingEventNote: data['upcomingEventNote'] as String?,
-      history: List<String>.from(data['history'] ?? []),
-      stageConfirmations: List<String>.from(data['stageConfirmations'] ?? []),
+      festivalsShared: (json['festivals_shared'] as num?)?.toInt() ?? 0,
+      messageCount: (json['message_count'] as num?)?.toInt() ?? 0,
+      upcomingEventTitle: json['upcoming_event_title'] as String?,
+      upcomingEventDate: json['upcoming_event_date'] as String?,
+      upcomingEventNote: json['upcoming_event_note'] as String?,
+      history: (json['history'] as List?)?.map((e) => '$e').toList() ?? const [],
+      stageConfirmations:
+          (json['stage_confirmations'] as List?)?.map((e) => '$e').toList() ??
+          const [],
     );
   }
 }
