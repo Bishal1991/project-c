@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'api_client.dart';
+import '../supabase_config.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -13,7 +13,7 @@ class AuthService {
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Upsert user profile into PostgreSQL (and auto-seed demo bonds if first login)
+  // Upsert user profile into Supabase PostgreSQL (and auto-seed demo bonds if first login)
   Future<void> syncUserProfile({String? displayName, String? phoneNumber}) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -32,13 +32,17 @@ class AuthService {
     }
 
     try {
-      await ApiClient.put('/users/${user.uid}', {
-        'displayName': resolvedName,
-        'email': user.email,
-        'phoneNumber': phoneNumber ?? user.phoneNumber,
-        'photoUrl': user.photoURL,
-      });
-      ApiClient.notifyRefresh();
+      await SupabaseConfig.client.rpc(
+        'upsert_user_profile',
+        params: {
+          'p_uid': user.uid,
+          'p_display_name': resolvedName,
+          'p_email': user.email,
+          'p_phone_number': phoneNumber ?? user.phoneNumber,
+          'p_photo_url': user.photoURL,
+        },
+      );
+      SupabaseConfig.notifyRefresh();
     } catch (e) {
       debugPrint('syncUserProfile error: $e');
     }
