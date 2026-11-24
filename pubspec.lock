@@ -368,6 +368,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.0"
+  nepali_kit:
+    dependency: "direct main"
+    description:
+      name: nepali_kit
+      sha256: "62c4a21c1683a0b2933d77e26c678265b2e61b41a93d0573358546ce20a567f1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   objective_c:
     dependency: transitive
     description:

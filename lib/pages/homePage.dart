@@ -95,6 +95,10 @@ class NZColors {
       Theme.of(context).brightness == Brightness.dark ? dark : light;
 
   NZTone tone(int n) => tones[(n - 1).clamp(0, tones.length - 1)];
+
+  /// Event panel / coral accent tone
+  Color get accentSoft => tone(2).bg;
+  Color get accentInk => tone(2).ink;
 }
 
 class NZText {
@@ -123,7 +127,7 @@ class NZText {
       letterSpacing: -0.01 * size);
 }
 
-const List<BoxShadow> _lift = [
+const List<BoxShadow> nzLift = [
   BoxShadow(
     color: Color.fromRGBO(27, 24, 48, .28),
     blurRadius: 24,
@@ -435,7 +439,7 @@ class _HomePageState extends State<HomePage> {
                       left: 12,
                       right: 12,
                       bottom: circles ? 140 : 72,
-                      child: _Toast(
+                      child: NZToast(
                         key: ValueKey(_toastSeq),
                         message: _toast!,
                         onUndo: _controller.undo,
@@ -447,7 +451,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
-          _NZTabBar(
+          NZTabBar(
             current: 0,
             eventsBadge: widget.eventsBadge,
             chatBadge: widget.chatBadge,
@@ -553,7 +557,7 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          _Press(
+          NZPress(
             label: filters > 0
                 ? 'Filters, $filters active'
                 : 'Discover settings',
@@ -639,7 +643,7 @@ class _ProfileCard extends StatelessWidget {
           color: c.card,
           borderRadius: BorderRadius.circular(NZRadius.r4),
           border: Border.all(color: c.line),
-          boxShadow: percentX != 0 ? _lift : null,
+          boxShadow: percentX != 0 ? nzLift : null,
         ),
         child: Column(
           children: [
@@ -692,7 +696,7 @@ class _ProfileCard extends StatelessWidget {
                       Positioned(
                         right: 12,
                         bottom: 12,
-                        child: _Press(
+                        child: NZPress(
                           label: 'Details for ${p.name}',
                           onTap: onInfo,
                           child: Container(
@@ -959,7 +963,7 @@ class _CircleActions extends StatelessWidget {
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Press(
+          NZPress(
             label: label,
             onTap: on ? tap : null,
             scale: .94,
@@ -971,7 +975,7 @@ class _CircleActions extends StatelessWidget {
                 color: bg,
                 border: Border.all(
                     color: (primary && on) ? c.primary : c.line),
-                boxShadow: on ? _lift : null,
+                boxShadow: on ? nzLift : null,
               ),
               child: Icon(icon, size: 28, color: fg),
             ),
@@ -1010,7 +1014,7 @@ class _CircleButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = NZColors.of(context);
     final on = onTap != null;
-    return _Press(
+    return NZPress(
       label: label,
       onTap: onTap,
       scale: .94,
@@ -1021,7 +1025,7 @@ class _CircleButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: on ? c.card : c.line,
           border: Border.all(color: c.line),
-          boxShadow: on ? _lift : null,
+          boxShadow: on ? nzLift : null,
         ),
         child: Icon(icon, size: 22, color: on ? color : c.mute),
       ),
@@ -1039,7 +1043,7 @@ class _PrimaryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = NZColors.of(context);
     final on = onTap != null;
-    return _Press(
+    return NZPress(
       onTap: onTap,
       child: Container(
         height: height,
@@ -1067,7 +1071,7 @@ class _GhostButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = NZColors.of(context);
-    return _Press(
+    return NZPress(
       onTap: onTap,
       child: Container(
         height: 48,
@@ -1080,8 +1084,8 @@ class _GhostButton extends StatelessWidget {
 }
 
 /// Tap target with the design's press feedback (scale .97, 120 ms).
-class _Press extends StatefulWidget {
-  const _Press({
+class NZPress extends StatefulWidget {
+  const NZPress({
     required this.child,
     this.onTap,
     this.label,
@@ -1093,10 +1097,10 @@ class _Press extends StatefulWidget {
   final double scale;
 
   @override
-  State<_Press> createState() => _PressState();
+  State<NZPress> createState() => _PressState();
 }
 
-class _PressState extends State<_Press> {
+class _PressState extends State<NZPress> {
   bool _down = false;
 
   void _set(bool v) {
@@ -1295,8 +1299,8 @@ class _EmptyState extends StatelessWidget {
 // Toast (with Undo)
 // ─────────────────────────────────────────────────────────────
 
-class _Toast extends StatelessWidget {
-  const _Toast({super.key, required this.message, required this.onUndo});
+class NZToast extends StatelessWidget {
+  const NZToast({super.key, required this.message, required this.onUndo});
   final String message;
   final VoidCallback onUndo;
 
@@ -1321,7 +1325,7 @@ class _Toast extends StatelessWidget {
           decoration: BoxDecoration(
             color: c.ink,
             borderRadius: BorderRadius.circular(NZRadius.r2),
-            boxShadow: _lift,
+            boxShadow: nzLift,
           ),
           child: Row(
             children: [
@@ -1331,7 +1335,7 @@ class _Toast extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: NZText.ui(14, color: c.bg)),
               ),
-              _Press(
+              NZPress(
                 label: 'Undo',
                 onTap: onUndo,
                 child: Container(
@@ -1408,7 +1412,7 @@ class _CoachOverlay extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: c.card,
                     borderRadius: BorderRadius.circular(NZRadius.r4),
-                    boxShadow: _lift,
+                    boxShadow: nzLift,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1440,8 +1444,8 @@ class _CoachOverlay extends StatelessWidget {
 // Bottom tab bar
 // ─────────────────────────────────────────────────────────────
 
-class _NZTabBar extends StatelessWidget {
-  const _NZTabBar({
+class NZTabBar extends StatelessWidget {
+  const NZTabBar({
     required this.current,
     required this.eventsBadge,
     required this.chatBadge,
