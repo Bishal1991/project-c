@@ -262,13 +262,12 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
                           ),
                         ],
                       ),
-
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
                         controller: _messageController,
                         maxLines: null,
                         textCapitalization: TextCapitalization.sentences,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                             hintText: 'Type a message...',
                             border: InputBorder.none,
                         ),
@@ -301,4 +300,3 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
     );
   }
 }
-

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import 'LoginPage.dart';
+import 'login_page.dart';
 
 /// Profile content only. No Scaffold, app bar or bottom nav:
 /// your parent page already provides those.
@@ -62,7 +62,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const Loginpage()),
+        MaterialPageRoute(builder: (_) => const LoginPage()),
             (route) => false,
       );
     } catch (e) {
