@@ -1,33 +1,26 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import '../models/user_model.dart';
+import '../supabase_config.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '910361176882-7mqvjmdtlthdug9kf5hjb3i6ko0gumg1.apps.googleusercontent.com',
+    serverClientId: '717226428903-2s85228cv2s7h957lr8uju0j8d627kok.apps.googleusercontent.com',
   );
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   User? get currentUser => _auth.currentUser;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Upsert user profile into Firestore so other users can search by email or phone
+  // Upsert user profile into Supabase PostgreSQL (and auto-seed demo bonds if first login)
   Future<void> syncUserProfile({String? displayName, String? phoneNumber}) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    final docRef = _firestore.collection('users').doc(user.uid);
-    final docSnap = await docRef.get();
-
     String resolvedName = displayName ?? '';
     if (resolvedName.isEmpty) {
-      if (docSnap.exists && docSnap.data()?['displayName'] != null) {
-        resolvedName = docSnap.data()!['displayName'] as String;
-      } else if (user.displayName != null && user.displayName!.isNotEmpty) {
+      if (user.displayName != null && user.displayName!.isNotEmpty) {
         resolvedName = user.displayName!;
       } else if (user.email != null && user.email!.isNotEmpty) {
         resolvedName = user.email!.split('@')[0];
@@ -38,24 +31,28 @@ class AuthService {
       }
     }
 
-    final userModel = UserModel(
-      uid: user.uid,
-      displayName: resolvedName,
-      email: user.email,
-      phoneNumber: phoneNumber ?? user.phoneNumber,
-      photoUrl: user.photoURL,
-    );
-
-    await docRef.set(userModel.toMap(), SetOptions(merge: true));
+    try {
+      await SupabaseConfig.client.rpc(
+        'upsert_user_profile',
+        params: {
+          'p_uid': user.uid,
+          'p_display_name': resolvedName,
+          'p_email': user.email,
+          'p_phone_number': phoneNumber ?? user.phoneNumber,
+          'p_photo_url': user.photoURL,
+        },
+      );
+      SupabaseConfig.notifyRefresh();
+    } catch (e) {
+      debugPrint('syncUserProfile error: $e');
+    }
   }
 
   Future<void> updateDisplayName(String name) async {
     final user = _auth.currentUser;
     if (user == null) return;
     await user.updateDisplayName(name);
-    await _firestore.collection('users').doc(user.uid).update({
-      'displayName': name,
-    });
+    await syncUserProfile(displayName: name);
   }
 
   // Google Sign-In
