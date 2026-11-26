@@ -3,6 +3,53 @@ import '../models/bond_model.dart';
 import '../models/user_model.dart';
 import '../supabase_config.dart';
 
+class FestivalInvitationModel {
+  final int id;
+  final String bondId;
+  final int festivalId;
+  final String status;
+  final String festivalName;
+  final String festivalDate;
+  final String festivalCommunity;
+  final String festivalRegion;
+  final String? festivalDescription;
+  final String? festivalEtiquette;
+  final String hostName;
+  final String? hostPhoto;
+
+  const FestivalInvitationModel({
+    required this.id,
+    required this.bondId,
+    required this.festivalId,
+    required this.status,
+    required this.festivalName,
+    required this.festivalDate,
+    required this.festivalCommunity,
+    required this.festivalRegion,
+    this.festivalDescription,
+    this.festivalEtiquette,
+    required this.hostName,
+    this.hostPhoto,
+  });
+
+  factory FestivalInvitationModel.fromJson(Map<String, dynamic> json) {
+    return FestivalInvitationModel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      bondId: json['bond_id'] as String? ?? '',
+      festivalId: (json['festival_id'] as num?)?.toInt() ?? 0,
+      status: json['status'] as String? ?? 'pending',
+      festivalName: json['festival_name'] as String? ?? '',
+      festivalDate: json['festival_date'] as String? ?? '',
+      festivalCommunity: json['festival_community'] as String? ?? '',
+      festivalRegion: json['festival_region'] as String? ?? '',
+      festivalDescription: json['festival_description'] as String?,
+      festivalEtiquette: json['festival_etiquette'] as String?,
+      hostName: json['host_name'] as String? ?? 'User',
+      hostPhoto: json['host_photo'] as String?,
+    );
+  }
+}
+
 class BondService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -50,6 +97,22 @@ class BondService {
     );
   }
 
+  Stream<List<FestivalModel>> getFestivalsStream() {
+    return SupabaseConfig.watchQuery(
+      () async {
+        final res = await SupabaseConfig.client
+            .from('festivals')
+            .select()
+            .order('id', ascending: true);
+        return (res as List<dynamic>)
+            .map((e) => FestivalModel.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      },
+      tables: const ['festivals'],
+      channelPrefix: 'festivals_stream',
+    );
+  }
+
   Future<List<FestivalModel>> getFestivals() async {
     final res = await SupabaseConfig.client
         .from('festivals')
@@ -58,6 +121,41 @@ class BondService {
     return (res as List<dynamic>)
         .map((e) => FestivalModel.fromJson(Map<String, dynamic>.from(e)))
         .toList();
+  }
+
+  Stream<List<FestivalInvitationModel>> getFestivalInvitationsStream() {
+    final myUid = currentUserId;
+    if (myUid == null) return const Stream.empty();
+
+    return SupabaseConfig.watchQuery(
+      () async {
+        final res = await SupabaseConfig.client.rpc(
+          'get_user_festival_invitations',
+          params: {'p_uid': myUid},
+        );
+        final list = (res as List<dynamic>? ?? const []);
+        return list
+            .map(
+              (item) => FestivalInvitationModel.fromJson(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .toList();
+      },
+      tables: const ['festival_invitations'],
+      channelPrefix: 'festival_invitations_$myUid',
+    );
+  }
+
+  Future<void> respondFestivalInvitation(int inviteId, String status) async {
+    await SupabaseConfig.client.rpc(
+      'respond_festival_invitation',
+      params: {
+        'p_invite_id': inviteId,
+        'p_status': status,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
   }
 
   Future<void> setBondFestival({
@@ -98,6 +196,35 @@ class BondService {
       final map = Map<String, dynamic>.from(item);
       return UserModel.fromMap(map, map['uid'] as String? ?? '');
     }).toList();
+  }
+
+  Future<void> swipeUser({
+    required String targetUid,
+    required String action, // 'pass' or 'bond'
+    String? matchReason,
+  }) async {
+    final myUid = currentUserId;
+    if (myUid == null) return;
+
+    await SupabaseConfig.client.from('profile_swipes').upsert({
+      'swiper_uid': myUid,
+      'target_uid': targetUid,
+      'action': action,
+      if (matchReason != null) 'match_reason': matchReason,
+    });
+    SupabaseConfig.notifyRefresh();
+  }
+
+  Future<void> undoSwipe(String targetUid) async {
+    final myUid = currentUserId;
+    if (myUid == null) return;
+
+    await SupabaseConfig.client
+        .from('profile_swipes')
+        .delete()
+        .eq('swiper_uid', myUid)
+        .eq('target_uid', targetUid);
+    SupabaseConfig.notifyRefresh();
   }
 
   Future<void> createBondWithUser(
@@ -141,7 +268,6 @@ class BondService {
     );
   }
 
-  // Search only among already bonded users (used by Chat searchbar)
   Future<List<UserModel>> searchBondedUsers(String query) async {
     final myUid = currentUserId;
     final cleanQuery = query.trim();
@@ -162,7 +288,6 @@ class BondService {
     }).toList();
   }
 
-  // Both participants confirm to move Chinari (1) -> Saathi (2) -> Mit (3)
   Future<void> confirmStageAdvance(BondModel bond) async {
     final myUid = currentUserId;
     if (myUid == null || bond.stage >= 3) return;
