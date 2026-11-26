@@ -6,6 +6,7 @@ import 'bond_page.dart';
 import 'events_page.dart';
 import 'home_page.dart';
 import 'login_page.dart';
+import 'profilePage.dart';
 
 class MainNavigationPage extends StatefulWidget {
   const MainNavigationPage({super.key});
@@ -31,117 +32,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _authService.syncUserProfile();
   }
 
-  void _showEditNameDialog() {
-    final nameController = TextEditingController(
-      text: _authService.currentUser?.displayName ?? '',
-    );
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Display Name'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            hintText: 'Enter your name',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = nameController.text.trim();
-              if (newName.isNotEmpty) {
-                await _authService.updateDisplayName(newName);
-                if (mounted) setState(() {});
-              }
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleLogout() async {
-    await _authService.signOut();
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (route) => false,
-      );
-    }
-  }
-
-  Widget _buildProfileTab() {
-    final user = _authService.currentUser;
-    final name = user?.displayName?.isNotEmpty == true
-        ? user!.displayName!
-        : 'User';
-
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        CircleAvatar(
-          radius: 36,
-          backgroundColor: _purple,
-          child: Text(
-            name[0].toUpperCase(),
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Center(
-          child: Text(
-            name,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-        ),
-        if (user?.email != null) ...[
-          const SizedBox(height: 4),
-          Center(
-            child: Text(
-              user!.email!,
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ),
-        ],
-        if (user?.phoneNumber != null) ...[
-          const SizedBox(height: 4),
-          Center(
-            child: Text(
-              user!.phoneNumber!,
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ),
-        ],
-        const SizedBox(height: 24),
-        ListTile(
-          leading: const Icon(Icons.edit),
-          title: const Text('Edit Display Name'),
-          onTap: _showEditNameDialog,
-        ),
-        ListTile(
-          leading: const Icon(Icons.logout, color: Colors.redAccent),
-          title: const Text(
-            'Logout',
-            style: TextStyle(color: Colors.redAccent),
-          ),
-          onTap: _handleLogout,
-        ),
-      ],
-    );
-  }
 
   // Order matches design: 0=Home, 1=Bonds, 2=Events, 3=Chat, 4=Me
   Widget _buildTab(int index) {
@@ -155,7 +46,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       case 3:
         return const ChatListWidget();
       case 4:
-        return _buildProfileTab();
+        return const ProfilePage();
       default:
         return const SizedBox.shrink();
     }
