@@ -219,10 +219,10 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isBondsTab = _currentIndex == 1;
+    final isDarkCustomHeaderTab = _currentIndex == 1 || _currentIndex == 3;
     return Scaffold(
-      backgroundColor: isBondsTab ? _darkBg : null,
-      appBar: isBondsTab
+      backgroundColor: isDarkCustomHeaderTab ? _darkBg : null,
+      appBar: isDarkCustomHeaderTab
           ? null
           : AppBar(
               title: Text(_getTabTitle(_currentIndex)),
