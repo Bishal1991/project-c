@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/phone_auth_service.dart';
 import '../widgets/auth_widgets.dart';
 import 'main_navigation_page.dart';
+import 'profile_setup_page.dart';
 
 enum AuthMode { login, register }
 
@@ -76,14 +77,33 @@ class _OtpPageState extends State<OtpPage> {
 
     try {
       final cred = await widget.service.verifyCode(_code.text);
+      final isNew = cred.additionalUserInfo?.isNewUser ?? false;
+
+      // Logging in with a number that has no account.
+      if (widget.mode == AuthMode.login && isNew) {
+        await widget.service.discardNewUser(cred);
+        if (mounted) Navigator.pop(context, 'not_registered');
+        return;
+      }
+
       if (widget.mode == AuthMode.register) {
         await widget.service.saveProfile(cred);
+      } else {
+        await widget.service.indexPhone(cred);
       }
+
+      final uid = cred.user?.uid;
+      final done =
+          uid == null ? false : await widget.service.isProfileComplete(uid);
       if (!mounted) return;
+
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const MainNavigationPage()),
-            (route) => false,
+        MaterialPageRoute(
+          builder: (_) =>
+              done ? const MainNavigationPage() : const ProfileSetupPage(),
+        ),
+        (route) => false,
       );
     } on PhoneAuthException catch (e) {
       if (mounted) {
@@ -95,34 +115,70 @@ class _OtpPageState extends State<OtpPage> {
     } catch (e) {
       debugPrint('Verify failed: $e');
       if (mounted) {
-        setState(() {
-          _error = 'Something went wrong. Try again.';
-          _code.clear();
-        });
+        setState(() => _error = 'Something went wrong. Try again.');
       }
     } finally {
-      if (mounted) setState(() => _verifying = false);
+      if (mounted) {
+        setState(() => _verifying = false);
+        if (_error != null) _focus.requestFocus();
+      }
     }
   }
 
   Future<void> _resend() async {
+    if (_seconds > 0 || _resending) return;
     setState(() {
       _resending = true;
       _error = null;
     });
     try {
       await widget.service.sendCode(widget.phone, resend: true);
-      if (!mounted) return;
-      setState(() => _seconds = 30);
-      _startTimer();
+      if (mounted) {
+        _code.clear();
+        setState(() => _seconds = 30);
+        _startTimer();
+        _focus.requestFocus();
+      }
     } on PhoneAuthException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       debugPrint('Resend failed: $e');
-      if (mounted) setState(() => _error = 'Could not resend. Try again.');
+      if (mounted) {
+        setState(() => _error = 'Could not resend the code. Try again.');
+      }
     } finally {
       if (mounted) setState(() => _resending = false);
     }
+  }
+
+  Widget _box(int i, String text) {
+    final filled = i < text.length;
+    final active = i == text.length && _focus.hasFocus;
+    final color = _error != null
+        ? AuthColors.error
+        : (filled || active)
+        ? AuthColors.primary
+        : AuthColors.border;
+
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AuthColors.field,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color,
+          width: (filled || active || _error != null) ? 1.8 : 1,
+        ),
+      ),
+      child: Text(
+        filled ? text[i] : '',
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: AuthColors.ink,
+        ),
+      ),
+    );
   }
 
   Widget _boxes() {
@@ -131,68 +187,47 @@ class _OtpPageState extends State<OtpPage> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _focus.requestFocus(),
-      child: Stack(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(_length, (i) {
-              final active = i == text.length && _focus.hasFocus;
-              final color = _error != null
-                  ? AuthColors.error
-                  : active
-                  ? AuthColors.primary
-                  : AuthColors.border;
-              return Container(
-                width: 46,
-                height: 56,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: color,
-                    width: active || _error != null ? 1.8 : 1,
-                  ),
-                ),
-                child: Text(
-                  i < text.length ? text[i] : '',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: AuthColors.ink,
-                  ),
-                ),
-              );
-            }),
-          ),
-          // Invisible field that actually receives the typing / SMS autofill.
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0,
-              child: TextField(
-                controller: _code,
-                focusNode: _focus,
-                autofocus: true,
-                enabled: !_verifying,
-                keyboardType: TextInputType.number,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                enableInteractiveSelection: false,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(_length),
+      child: SizedBox(
+        height: 58,
+        child: Stack(
+          children: [
+            Row(
+              children: [
+                for (var i = 0; i < _length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: _box(i, text)),
                 ],
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  counterText: '',
+              ],
+            ),
+            // Invisible field that receives the typing and SMS autofill.
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0,
+                child: TextField(
+                  controller: _code,
+                  focusNode: _focus,
+                  autofocus: true,
+                  enabled: !_verifying,
+                  keyboardType: TextInputType.number,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  enableInteractiveSelection: false,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(_length),
+                  ],
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    counterText: '',
+                  ),
+                  onChanged: (v) {
+                    setState(() => _error = null);
+                    if (v.length == _length) _verify();
+                  },
                 ),
-                onChanged: (v) {
-                  setState(() => _error = null);
-                  if (v.length == _length) _verify();
-                },
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -200,45 +235,48 @@ class _OtpPageState extends State<OtpPage> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
+      centered: true,
+      showBack: false,
       title: 'Enter the code',
-      subtitle: 'We sent a 6-digit code to +977 ${widget.phone}.',
+      subtitle: 'Sent to +977 ${widget.phone}',
       children: [
         _boxes(),
         if (_error != null) ErrorLine(_error!),
         const SizedBox(height: 24),
         PrimaryButton(
-          label: 'Verify',
+          label: 'Confirm',
           loading: _verifying,
           looksDisabled: _code.text.length != _length,
           onPressed: _verify,
         ),
         const SizedBox(height: 12),
-        Center(
-          child: _seconds > 0
-              ? Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Resend code in 0:${_seconds.toString().padLeft(2, '0')}',
-              style: const TextStyle(
-                fontSize: 14,
-                color: AuthColors.muted,
+        _seconds > 0
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'Resend code in 0:${_seconds.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: AuthColors.muted,
+                  ),
+                ),
+              )
+            : TextButton(
+                onPressed: _resending ? null : _resend,
+                style: TextButton.styleFrom(
+                  foregroundColor: AuthColors.ink,
+                ),
+                child: Text(
+                  _resending ? 'Sending...' : 'Resend code',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
-          )
-              : TextButton(
-            onPressed: _resending ? null : _resend,
-            style: TextButton.styleFrom(
-              foregroundColor: AuthColors.primary,
-            ),
-            child: Text(
-              _resending ? 'Sending...' : 'Resend code',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
         TextLinkButton(
           'Use a different number',
-          onPressed: () => Navigator.maybePop(context),
+          onPressed: _verifying ? null : () => Navigator.maybePop(context),
         ),
       ],
     );

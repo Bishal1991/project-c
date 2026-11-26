@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+
 import '../services/auth_service.dart';
 import '../services/phone_auth_service.dart';
 import '../widgets/auth_widgets.dart';
 import 'main_navigation_page.dart';
 import 'otp_page.dart';
+import 'profile_setup_page.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -23,7 +25,6 @@ class _LoginPageState extends State<LoginPage> {
   final _authService = AuthService();
 
   bool _useEmailMode = false;
-  bool _obscurePassword = true;
   bool _loading = false;
   bool _googleLoading = false;
   bool _notRegistered = false;
@@ -43,11 +44,21 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  bool get _validPhone => RegExp(r'^\d{10}$').hasMatch(_phone.text);
+  bool get _valid => RegExp(r'^\d{10}$').hasMatch(_phone.text);
+
+  void _showNotRegistered() {
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _notRegistered = true;
+      _error =
+          "We don't have an account for this number. Check it, or create an account.";
+    });
+  }
 
   Future<void> _sendCode() async {
     if (_loading) return;
-    if (!_validPhone) {
+    if (!_valid) {
       setState(() => _error = 'Enter a 10-digit mobile number.');
       return;
     }
@@ -59,26 +70,46 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
+      final exists = await _service.isRegistered(_phone.text);
+      if (exists == false) {
+        _showNotRegistered();
+        return;
+      }
       await _service.sendCode(_phone.text);
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OtpPage(
-            phone: _phone.text,
-            service: _service,
-            mode: AuthMode.login,
-          ),
-        ),
-      );
     } on PhoneAuthException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.message;
+        });
+      }
+      return;
     } catch (e) {
       debugPrint('Send code failed: $e');
-      if (mounted) setState(() => _error = 'Something went wrong. Try again.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Something went wrong. Try again.';
+        });
+      }
+      return;
     }
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OtpPage(
+          phone: _phone.text,
+          service: _service,
+          mode: AuthMode.login,
+        ),
+      ),
+    );
+
+    if (result == 'not_registered') _showNotRegistered();
   }
 
   Future<void> _handleEmailLogin() async {
@@ -97,14 +128,20 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await _authService.signInWithEmailAndPassword(
+      final cred = await _authService.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      final uid = cred.user?.uid;
+      final done =
+          uid == null ? true : await _service.isProfileComplete(uid);
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const MainNavigationPage()),
+        MaterialPageRoute(
+          builder: (_) =>
+              done ? const MainNavigationPage() : const ProfileSetupPage(),
+        ),
         (route) => false,
       );
     } catch (e) {
@@ -119,9 +156,16 @@ class _LoginPageState extends State<LoginPage> {
     try {
       final cred = await _authService.signInWithGoogle();
       if (cred != null && mounted) {
+        final uid = cred.user?.uid;
+        final done =
+            uid == null ? true : await _service.isProfileComplete(uid);
+        if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const MainNavigationPage()),
+          MaterialPageRoute(
+            builder: (_) =>
+                done ? const MainNavigationPage() : const ProfileSetupPage(),
+          ),
           (route) => false,
         );
       }
@@ -152,7 +196,7 @@ class _LoginPageState extends State<LoginPage> {
           ? 'Sign in with your Firebase email and password.'
           : 'Enter your mobile number. We will text you a 6-digit code.',
       children: [
-        // Toggle between Phone OTP and Email/Password
+        // Toggle between Phone OTP and Email/Password in dark theme
         Row(
           children: [
             Expanded(
@@ -160,6 +204,12 @@ class _LoginPageState extends State<LoginPage> {
                 label: const Center(child: Text('Phone OTP')),
                 selected: !_useEmailMode,
                 showCheckmark: false,
+                selectedColor: AuthColors.primary,
+                backgroundColor: AuthColors.field,
+                labelStyle: TextStyle(
+                  color: !_useEmailMode ? Colors.white : AuthColors.muted,
+                  fontWeight: FontWeight.w600,
+                ),
                 onSelected: (_) => setState(() {
                   _useEmailMode = false;
                   _error = null;
@@ -172,6 +222,12 @@ class _LoginPageState extends State<LoginPage> {
                 label: const Center(child: Text('Email & Password')),
                 selected: _useEmailMode,
                 showCheckmark: false,
+                selectedColor: AuthColors.primary,
+                backgroundColor: AuthColors.field,
+                labelStyle: TextStyle(
+                  color: _useEmailMode ? Colors.white : AuthColors.muted,
+                  fontWeight: FontWeight.w600,
+                ),
                 onSelected: (_) => setState(() {
                   _useEmailMode = true;
                   _error = null;
@@ -180,7 +236,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ],
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
 
         if (!_useEmailMode) ...[
           PhoneField(
@@ -213,47 +269,26 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: _loading ? null : _goToRegister,
             ),
         ] else ...[
-          TextField(
+          DarkField(
+            label: 'Email address',
             controller: _emailController,
             enabled: !_loading,
             keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: 'Email address',
-              prefixIcon: const Icon(Icons.email_outlined),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
           ),
-          const SizedBox(height: 14),
-          TextField(
+          const SizedBox(height: 16),
+          DarkField(
+            label: 'Password',
             controller: _passwordController,
             enabled: !_loading,
-            obscureText: _obscurePassword,
-            onSubmitted: (_) => _handleEmailLogin(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
           ),
           if (_error != null) ErrorLine(_error!),
-          const SizedBox(height: 22),
+          const SizedBox(height: 24),
           PrimaryButton(
             label: 'Sign in with Email',
             loading: _loading,
@@ -261,37 +296,26 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ],
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Row(
           children: const [
-            Expanded(child: Divider()),
+            Expanded(child: Divider(color: AuthColors.border)),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 'or',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
+                style: TextStyle(color: AuthColors.muted, fontSize: 13),
               ),
             ),
-            Expanded(child: Divider()),
+            Expanded(child: Divider(color: AuthColors.border)),
           ],
         ),
-        const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: (_loading || _googleLoading) ? null : _handleGoogleSignIn,
-          icon: _googleLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.g_mobiledata_rounded, size: 26),
-          label: const Text('Continue with Google'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
+        const SizedBox(height: 18),
+        SecondaryButton(
+          label: _googleLoading ? 'Signing in...' : 'Continue with Google',
+          onPressed: (_loading || _googleLoading)
+              ? null
+              : () => _handleGoogleSignIn(),
         ),
       ],
     );

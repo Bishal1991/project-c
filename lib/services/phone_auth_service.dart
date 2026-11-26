@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../supabase_config.dart';
 
 class PhoneAuthException implements Exception {
@@ -10,7 +11,7 @@ class PhoneAuthException implements Exception {
   String toString() => message;
 }
 
-/// Phone + 6-digit-code sign-in (Firebase Auth) with profile lookup & storage in Supabase PostgreSQL.
+/// Phone number + 6-digit code sign-in (Firebase Auth) backed by Supabase PostgreSQL (`public.users`).
 class PhoneAuthService {
   PhoneAuthService({FirebaseAuth? auth})
       : _auth = auth ?? FirebaseAuth.instance;
@@ -23,43 +24,64 @@ class PhoneAuthService {
   int? _resendToken;
   String? _lastPhone;
 
-  /// Checks if an account exists for this 10-digit number in Supabase `public.users`.
-  Future<bool> isRegistered(String localNumber) async {
+  /// true = has an account in Supabase `public.users`, false = no account, null = couldn't check.
+  Future<bool?> isRegistered(String localNumber) async {
     try {
       final res = await SupabaseConfig.client.rpc(
         'is_phone_registered',
         params: {'p_phone': '$countryCode$localNumber'},
       );
-      return res == true;
+      if (res is bool) return res;
+      return null;
     } catch (e) {
-      throw PhoneAuthException('Could not check this number. Please try again.');
+      debugPrint('isRegistered could not check: $e');
+      return null;
     }
   }
 
-  /// Sends the 6-digit SMS code via Firebase Auth.
+  /// Sends the 6-digit SMS code. Completes once the SMS has been sent.
   Future<void> sendCode(String localNumber, {bool resend = false}) {
     final completer = Completer<void>();
     _lastPhone = '$countryCode$localNumber';
 
-    _auth.verifyPhoneNumber(
-      phoneNumber: _lastPhone!,
-      timeout: const Duration(seconds: 60),
-      forceResendingToken: resend ? _resendToken : null,
-      verificationCompleted: (_) {},
-      verificationFailed: (e) {
-        if (!completer.isCompleted) {
-          completer.completeError(PhoneAuthException(_friendly(e)));
-        }
-      },
-      codeSent: (id, token) {
-        _verificationId = id;
-        _resendToken = token;
-        if (!completer.isCompleted) completer.complete();
-      },
-      codeAutoRetrievalTimeout: (id) => _verificationId = id,
-    );
+    _auth
+        .verifyPhoneNumber(
+          phoneNumber: _lastPhone!,
+          timeout: const Duration(seconds: 60),
+          forceResendingToken: resend ? _resendToken : null,
+          verificationCompleted: (_) {},
+          verificationFailed: (e) {
+            debugPrint('verificationFailed: ${e.code} ${e.message}');
+            if (!completer.isCompleted) {
+              completer.completeError(PhoneAuthException(_friendly(e)));
+            }
+          },
+          codeSent: (id, token) {
+            _verificationId = id;
+            _resendToken = token;
+            if (!completer.isCompleted) completer.complete();
+          },
+          codeAutoRetrievalTimeout: (id) => _verificationId = id,
+        )
+        .catchError((Object e) {
+          debugPrint('verifyPhoneNumber error: $e');
+          if (!completer.isCompleted) {
+            completer.completeError(
+              PhoneAuthException(
+                e is FirebaseException
+                    ? _friendly(e)
+                    : 'Could not send the code. Try again.',
+              ),
+            );
+          }
+        });
 
-    return completer.future;
+    return completer.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () => throw PhoneAuthException(
+        'Could not send the code. Check your connection and try again.',
+      ),
+    );
   }
 
   Future<UserCredential> verifyCode(String code) async {
@@ -68,21 +90,32 @@ class PhoneAuthService {
       throw PhoneAuthException('This code has expired. Request a new one.');
     }
     try {
-      final cred = await _auth.signInWithCredential(
+      return await _auth.signInWithCredential(
         PhoneAuthProvider.credential(verificationId: id, smsCode: code),
       );
-      await saveProfile(cred);
-      return cred;
     } on FirebaseAuthException catch (e) {
+      debugPrint('verifyCode: ${e.code} ${e.message}');
       throw PhoneAuthException(_friendly(e));
     }
   }
 
-  /// Syncs the authenticated phone user to Supabase `public.users`.
+  /// Login with a number that has no account: Firebase just created one,
+  /// so remove it again and sign out.
+  Future<void> discardNewUser(UserCredential cred) async {
+    try {
+      await cred.user?.delete();
+    } catch (e) {
+      debugPrint('discardNewUser: $e');
+    }
+    await _auth.signOut();
+  }
+
+  /// Called after a successful register verification.
   Future<void> saveProfile(UserCredential cred) async {
     final user = cred.user;
     if (user == null) return;
     final phone = user.phoneNumber ?? _lastPhone;
+
     await SupabaseConfig.client.rpc(
       'upsert_user_profile',
       params: {
@@ -92,6 +125,32 @@ class PhoneAuthService {
       },
     );
     SupabaseConfig.notifyRefresh();
+  }
+
+  /// Ensures the phone number is synced on the user's Supabase profile row.
+  Future<void> indexPhone(UserCredential cred) async {
+    await saveProfile(cred);
+  }
+
+  /// Checks whether the user has completed their profile onboarding in Supabase `public.users`.
+  Future<bool> isProfileComplete(String uid) async {
+    try {
+      final res = await SupabaseConfig.client.rpc(
+        'get_user_profile',
+        params: {'p_uid': uid},
+      );
+      if (res is Map) {
+        final onboarded = res['is_onboarded'] == true;
+        final hasRegion =
+            (res['region'] as String?)?.trim().isNotEmpty == true ||
+            (res['city'] as String?)?.trim().isNotEmpty == true;
+        return onboarded && hasRegion;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('isProfileComplete: $e');
+      return true;
+    }
   }
 
   String _friendly(FirebaseException e) {
@@ -107,6 +166,13 @@ class PhoneAuthService {
         return 'This code has expired. Request a new one.';
       case 'network-request-failed':
         return 'No connection. Check your internet and try again.';
+      case 'quota-exceeded':
+        return 'SMS limit reached. Use a test number or try again later.';
+      case 'operation-not-allowed':
+        return 'Phone sign-in is turned off. Enable it in Firebase under Authentication.';
+      case 'app-not-authorized':
+      case 'missing-client-identifier':
+        return 'This app is not set up for phone sign-in yet. Add your SHA keys in Firebase.';
       default:
         return e.message ?? 'Something went wrong. Please try again.';
     }

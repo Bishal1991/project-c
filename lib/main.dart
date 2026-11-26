@@ -1,44 +1,39 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'firebase_options.dart';
-import 'pages/main_navigation_page.dart';
-import 'pages/login_page.dart';
+import 'pages/splash_page.dart';
+import 'widgets/auth_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const ChatApp());
+  SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
+  runApp(const MyApp());
 }
 
-class ChatApp extends StatelessWidget {
-  const ChatApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'eGuff Chat',
       debugShowCheckedModeBanner: false,
+      title: 'NewZen Mitjyu',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
         useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: AuthColors.bg,
+        colorScheme: const ColorScheme.dark(
+          primary: AuthColors.primary,
+          surface: AuthColors.field,
+          error: AuthColors.error,
+        ),
       ),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          if (snapshot.hasData && snapshot.data != null) {
-            return const MainNavigationPage();
-          }
-          return const LoginPage();
-        },
-      ),
+      home: const SplashPage(),
     );
   }
 }

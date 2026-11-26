@@ -58,7 +58,6 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _createAccount() async {
     if (_loading) return;
     if (!_formValid) {
-      // Reveal everything that is still missing.
       setState(() => _submitted = true);
       return;
     }
@@ -69,36 +68,43 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     try {
-      if (await _service.isRegistered(_phone.text)) {
-        if (mounted) {
-          setState(() => _serverError =
-          'This number already has an account. Log in instead.');
-        }
+      final exists = await _service.isRegistered(_phone.text);
+      if (exists == true) {
+        if (mounted) setState(() {
+          _loading = false;
+          _serverError = 'This number already has an account. Log in instead.';
+        });
         return;
       }
-
       await _service.sendCode(_phone.text);
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OtpPage(
-            phone: _phone.text,
-            service: _service,
-            mode: AuthMode.register,
-          ),
-        ),
-      );
     } on PhoneAuthException catch (e) {
-      if (mounted) setState(() => _serverError = e.message);
+      if (mounted) setState(() {
+        _loading = false;
+        _serverError = e.message;
+      });
+      return;
     } catch (e) {
       debugPrint('Register failed: $e');
-      if (mounted) {
-        setState(() => _serverError = 'Something went wrong. Try again.');
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() {
+        _loading = false;
+        _serverError = 'Something went wrong. Try again.';
+      });
+      return;
     }
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OtpPage(
+          phone: _phone.text,
+          service: _service,
+          mode: AuthMode.register,
+        ),
+      ),
+    );
   }
 
   @override
