@@ -1,46 +1,46 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
+
+import '../widgets/auth_widgets.dart';
+import 'editprofilepage.dart';
 import 'login_page.dart';
 
-/// Profile content only. No Scaffold, app bar or bottom nav:
-/// your parent page already provides those.
-class ProfilePage extends StatefulWidget {
+class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
+  Future<void> _edit(BuildContext context, Map<String, dynamic> data) async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => EditProfilePage(data: data)),
+    );
+    if (saved == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile updated.')),
+      );
+    }
+  }
 
-class _ProfilePageState extends State<ProfilePage> {
-  final _authService = AuthService();
+  void _comingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Coming soon.')),
+    );
+  }
 
-  // Neutral tokens only (no accent colors). Match _bg to your app background.
-  static const _bg = Color(0xFF0F1526);
-  static const _card = Color(0xFF161D31);
-  static const _border = Color(0xFF2A3350);
-  static const _textMuted = Color(0xFF9AA3BD);
+  void _goToLogin(BuildContext context) {
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+    );
+  }
 
-  // ---- Sample data: replace with your real user data ----
-  final String _name = 'Asmita Lama';
-  final int _age = 21;
-  final String _university = 'Tribhuvan University';
-  final String _city = 'Kathmandu';
-  final String _homeRegion = 'Hill (Pahad)';
-  final String _community = 'Prefer not to say';
-  final List<String> _interests = ['Photography', 'Hiking'];
-  final int _bonds = 12;
-  final int _events = 5;
-
-  Future<void> _confirmLogout() async {
+  Future<void> _logout(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Log out?', style: TextStyle(color: Colors.white)),
+        title: const Text('Log out?'),
         content: const Text(
-          'You will need to log in again to use the app.',
-          style: TextStyle(color: _textMuted),
+          'You will need your phone number and a new code to log in again.',
         ),
         actions: [
           TextButton(
@@ -49,312 +49,275 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Log out'),
+            child: const Text(
+              'Log out',
+              style: TextStyle(color: AuthColors.error),
+            ),
           ),
         ],
       ),
     );
-
     if (ok != true) return;
 
-    try {
-      await _authService.signOut(); // make sure AuthService has signOut()
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
+    await FirebaseAuth.instance.signOut();
+    if (!context.mounted) return;
+    _goToLogin(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: _bg,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () {
-                // TODO: open edit profile page
-              },
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Edit'),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.white,
-                textStyle: const TextStyle(fontWeight: FontWeight.w700),
-              ),
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    return Scaffold(
+      backgroundColor: AuthColors.bg,
+      body: SafeArea(
+        child: uid == null
+            ? Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('You are logged out.'),
+                const SizedBox(height: 16),
+                PrimaryButton(
+                  label: 'Log in',
+                  onPressed: () => _goToLogin(context),
+                ),
+              ],
             ),
           ),
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildStats(),
-          const SizedBox(height: 16),
-          _buildAboutCard(),
-          const SizedBox(height: 16),
-          _buildInterestsCard(),
-          const SizedBox(height: 28),
-          const Text(
-            'Settings',
-            style: TextStyle(
-              color: _textMuted,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _settingsTile(
-            icon: Icons.shield_outlined,
-            label: 'Privacy & safety',
-            onTap: () {},
-          ),
-          const SizedBox(height: 10),
-          _settingsTile(
-            icon: Icons.notifications_none_rounded,
-            label: 'Notification preferences',
-            onTap: () {},
-          ),
-          const SizedBox(height: 10),
-          _settingsTile(
-            icon: Icons.logout_rounded,
-            label: 'Log out',
-            showChevron: false,
-            onTap: _confirmLogout,
-          ),
-        ],
+        )
+            : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'Could not load your profile. Check your connection and try again.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            if (!snap.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: AuthColors.primary,
+                ),
+              );
+            }
+            return _content(context, snap.data!.data() ?? {});
+          },
+        ),
       ),
     );
   }
 
-  // ---------- Sections ----------
+  Widget _content(BuildContext context, Map<String, dynamic> data) {
+    final name = (data['name'] as String?)?.trim() ?? '';
+    final age = data['age']?.toString() ?? '';
+    final city = (data['city'] as String?)?.trim() ?? '';
+    final area = (data['area'] as String?)?.trim() ?? '';
+    final languages =
+        (data['languages'] as List?)?.map((e) => e.toString()).toList() ??
+            <String>[];
 
-  Widget _buildHeader() {
-    return Column(
+    final details =
+    [age, city, area].where((s) => s.isNotEmpty).join(' · ');
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       children: [
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: _border, width: 2),
-          ),
-          child: CircleAvatar(
-            radius: 52,
-            backgroundColor: const Color(0xFFEFF2F8),
-            child: Text(
-              _name.isNotEmpty ? _name[0].toUpperCase() : '?',
-              style: const TextStyle(
-                fontFamily: 'serif',
-                fontSize: 44,
-                fontWeight: FontWeight.w700,
-                color: _bg,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          '$_name, $_age',
-          style: const TextStyle(
-            fontFamily: 'serif',
-            color: Colors.white,
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 6),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.school_outlined, size: 16, color: _textMuted),
-            const SizedBox(width: 6),
-            Text(
-              '$_university · $_city',
-              style: const TextStyle(color: _textMuted, fontSize: 14),
+            const Expanded(child: Text('My profile', style: AuthText.heading)),
+            TextButton(
+              onPressed: () => _edit(context, data),
+              style: TextButton.styleFrom(foregroundColor: AuthColors.primary),
+              child: const Text(
+                'Edit',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
             ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildStats() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          _stat('$_bonds', 'Bonds'),
-          Container(width: 1, height: 32, color: _border),
-          _stat('$_events', 'Events'),
-          Container(width: 1, height: 32, color: _border),
-          _stat('${_interests.length}', 'Interests'),
-        ],
-      ),
-    );
-  }
-
-  Widget _stat(String value, String label) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(color: _textMuted, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAboutCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _fieldLabel(Icons.landscape_outlined, 'Home region'),
-          const SizedBox(height: 10),
-          _chip(_homeRegion),
-          const SizedBox(height: 20),
-          _fieldLabel(Icons.groups_2_outlined, 'Ethnic group / community'),
-          const SizedBox(height: 10),
-          _chip(_community),
-          const SizedBox(height: 10),
-          Row(
-            children: const [
-              Icon(Icons.lock_outline_rounded, size: 14, color: _textMuted),
-              SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Only you can see this unless you choose to share it.',
-                  style: TextStyle(color: _textMuted, fontSize: 12.5),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            CircleAvatar(
+              radius: 45,
+              backgroundColor: const Color(0xFFE9E4F8),
+              child: Text(
+                name.isEmpty ? '?' : name[0].toUpperCase(),
+                style: const TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                  color: AuthColors.primary,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isEmpty ? 'Add your name' : name,
+                    style: const TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: AuthColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    details.isEmpty ? 'Tap Edit to finish your profile' : details,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AuthColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        const _SectionLabel('Privacy'),
+        _NavRow(
+          title: 'Languages',
+          trailing: languages.isEmpty ? 'Add' : languages.join(', '),
+          onTap: () => _edit(context, data),
+        ),
+        const _Line(),
+        _NavRow(
+          title: 'Privacy & safety',
+          onTap: () => _comingSoon(context),
+        ),
+        const _Line(),
+        const _SectionLabel('Settings'),
+        _NavRow(
+          title: 'Notification preferences',
+          onTap: () => _comingSoon(context),
+        ),
+        const _Line(),
+        InkWell(
+          onTap: () => _logout(context),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'Log out',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AuthColors.error,
+              ),
+            ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInterestsCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _fieldLabel(Icons.interests_outlined, 'Interests'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: _interests.map(_chip).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------- Reusable pieces ----------
-
-  BoxDecoration _cardDecoration() => BoxDecoration(
-    color: _card,
-    borderRadius: BorderRadius.circular(20),
-    border: Border.all(color: _border),
-  );
-
-  Widget _fieldLabel(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: _textMuted),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            color: _textMuted,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
+        ),
+        const _Line(),
+        const Padding(
+          padding: EdgeInsets.only(top: 16),
+          child: Text(
+            'Others see only your city. Your place is shown only after you both say namaste.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: AuthColors.muted,
+            ),
           ),
         ),
       ],
     );
   }
+}
 
-  Widget _chip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: _border, width: 1.2),
-      ),
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Text(
         text,
         style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: AuthColors.ink,
         ),
       ),
     );
   }
+}
 
-  Widget _settingsTile({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool showChevron = true,
-  }) {
-    return Material(
-      color: _card,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _border),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: Colors.white, size: 22),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w600,
+class _NavRow extends StatelessWidget {
+  const _NavRow({required this.title, this.trailing, required this.onTap});
+
+  final String title;
+  final String? trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 16, color: AuthColors.ink),
+              ),
+            ),
+            if (trailing != null)
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    trailing!,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AuthColors.muted,
+                    ),
                   ),
                 ),
               ),
-              if (showChevron)
-                const Icon(Icons.chevron_right_rounded, color: _textMuted),
-            ],
-          ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AuthColors.muted,
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+class _Line extends StatelessWidget {
+  const _Line();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Divider(height: 1, thickness: 1, color: AuthColors.border);
   }
 }
