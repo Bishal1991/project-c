@@ -53,7 +53,19 @@ class FestivalInvitationModel {
 class BondService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  /// Automated greeting sent by User A when initiating a bond request (Case 1: Swipe/Tap Bond, Case 2: Search ID & Bond)
+  static const String defaultInitiatorAutomatedMessage =
+      'Namaste! 🙏 I came across your profile and would love to connect across our communities and start a Chinari bond with you.';
+
+  /// Automated acceptance reply sent by User B in Chat to accept the request and obtain the Chinari badge
+  static const String defaultAccepterAutomatedMessage =
+      'Namaste! 🙏 I am delighted to accept your bond request. Let\'s share our traditions and begin our Chinari journey!';
+
   String? get currentUserId => _auth.currentUser?.uid;
+
+  String getBondId(String uid1, String uid2) {
+    return uid1.compareTo(uid2) < 0 ? '${uid1}_$uid2' : '${uid2}_$uid1';
+  }
 
   Stream<List<BondModel>> getBondsStream() {
     final myUid = currentUserId;
@@ -78,6 +90,34 @@ class BondService {
         'festival_invitations',
       ],
       channelPrefix: 'user_bonds_$myUid',
+    );
+  }
+
+  Stream<BondModel?> getSingleBondStream(String bondId) {
+    final myUid = currentUserId;
+    if (myUid == null || bondId.isEmpty) return const Stream.empty();
+
+    return SupabaseConfig.watchQuery(
+      () async {
+        final res = await SupabaseConfig.client.rpc(
+          'get_single_bond',
+          params: {
+            'p_bond_id': bondId,
+            'p_uid': myUid,
+          },
+        );
+        if (res is Map && res.isNotEmpty && res['bond_id'] != null) {
+          return BondModel.fromJson(Map<String, dynamic>.from(res));
+        }
+        return null;
+      },
+      tables: const [
+        'bonds',
+        'bond_confirmations',
+        'bond_history',
+        'festival_invitations',
+      ],
+      channelPrefix: 'single_bond_$bondId',
     );
   }
 
@@ -158,6 +198,29 @@ class BondService {
     SupabaseConfig.notifyRefresh();
   }
 
+  /// Invites a Chinari/Saathi bond partner to a festival and posts an interactive invitation in Chat.
+  Future<void> inviteToFestival({
+    required String bondId,
+    required int festivalId,
+    String? note,
+    bool markDatePassed = false,
+  }) async {
+    final myUid = currentUserId;
+    if (myUid == null) return;
+
+    await SupabaseConfig.client.rpc(
+      'invite_to_festival',
+      params: {
+        'p_bond_id': bondId,
+        'p_host_uid': myUid,
+        'p_festival_id': festivalId,
+        'p_note': note,
+        'p_mark_date_passed': markDatePassed,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+  }
+
   Future<void> setBondFestival({
     required String bondId,
     required int? festivalId,
@@ -166,20 +229,66 @@ class BondService {
     final myUid = currentUserId;
     if (myUid == null) return;
 
+    if (festivalId != null) {
+      await inviteToFestival(
+        bondId: bondId,
+        festivalId: festivalId,
+        note: note,
+      );
+      return;
+    }
+
     await SupabaseConfig.client.rpc(
       'set_bond_festival',
       params: {
         'p_bond_id': bondId,
         'p_user_uid': myUid,
-        'p_festival_id': festivalId,
+        'p_festival_id': null,
         'p_note': note,
       },
     );
     SupabaseConfig.notifyRefresh();
   }
 
+  /// Marks the scheduled festival date as having passed so both users are asked "Did you meet?"
+  Future<void> markFestivalDatePassed(String bondId) async {
+    await SupabaseConfig.client.rpc(
+      'mark_festival_date_passed',
+      params: {'p_bond_id': bondId},
+    );
+    SupabaseConfig.notifyRefresh();
+  }
+
+  /// Post-festival verification: "Did you meet?"
+  /// Both confirming true upgrades bond to Stage 2 (Saathi) and unlocks Mit.
+  /// Either confirming false keeps bond at Stage 1 (Chinari) with Mit locked.
+  Future<Map<String, dynamic>> verifyFestivalMeetup({
+    required String bondId,
+    required bool didMeet,
+    String? userUidOverride,
+  }) async {
+    final uid = userUidOverride ?? currentUserId;
+    if (uid == null) return const {};
+
+    final res = await SupabaseConfig.client.rpc(
+      'verify_festival_meetup',
+      params: {
+        'p_bond_id': bondId,
+        'p_user_uid': uid,
+        'p_did_meet': didMeet,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+    return res is Map ? Map<String, dynamic>.from(res) : const {};
+  }
+
   Future<void> deleteBond(String bondId) async {
-    await SupabaseConfig.client.from('bonds').delete().eq('id', bondId);
+    final myUid = currentUserId;
+    if (myUid == null) return;
+    await SupabaseConfig.client.rpc(
+      'decline_bond_request',
+      params: {'p_bond_id': bondId, 'p_user_uid': myUid},
+    );
     SupabaseConfig.notifyRefresh();
   }
 
@@ -198,6 +307,68 @@ class BondService {
     }).toList();
   }
 
+  /// Case 1 (Swipe Right / Tap Bond on Home) & Case 2 (Search User ID & Tap Bond):
+  /// Creates Stage 0 Pending Bond and sends User A's automated greeting message into Chat.
+  Future<Map<String, dynamic>> sendBondRequest({
+    required String targetUid,
+    String? automatedMessage,
+    String? matchReason,
+  }) async {
+    final myUid = currentUserId;
+    if (myUid == null) return const {};
+
+    final res = await SupabaseConfig.client.rpc(
+      'send_bond_request',
+      params: {
+        'p_sender_uid': myUid,
+        'p_target_uid': targetUid,
+        'p_automated_message':
+            automatedMessage ?? defaultInitiatorAutomatedMessage,
+        'p_match_reason': matchReason,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+    return res is Map ? Map<String, dynamic>.from(res) : const {};
+  }
+
+  /// User B accepts User A's bond request in Chat by sending their automated acceptance message.
+  /// Unlocks Stage 1: Chinari and enables free chat!
+  Future<Map<String, dynamic>> acceptBondRequest({
+    required String bondId,
+    String? automatedReply,
+    String? accepterUidOverride,
+  }) async {
+    final uid = accepterUidOverride ?? currentUserId;
+    if (uid == null) return const {};
+
+    final res = await SupabaseConfig.client.rpc(
+      'accept_bond_request',
+      params: {
+        'p_bond_id': bondId,
+        'p_accepter_uid': uid,
+        'p_automated_reply':
+            automatedReply ?? defaultAccepterAutomatedMessage,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+    return res is Map ? Map<String, dynamic>.from(res) : const {};
+  }
+
+  /// User B declines a pending Stage 0 bond request.
+  Future<void> declineBondRequest(String bondId) async {
+    final myUid = currentUserId;
+    if (myUid == null) return;
+
+    await SupabaseConfig.client.rpc(
+      'decline_bond_request',
+      params: {
+        'p_bond_id': bondId,
+        'p_user_uid': myUid,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+  }
+
   Future<void> swipeUser({
     required String targetUid,
     required String action, // 'pass' or 'bond'
@@ -206,11 +377,19 @@ class BondService {
     final myUid = currentUserId;
     if (myUid == null) return;
 
+    if (action == 'bond') {
+      await sendBondRequest(
+        targetUid: targetUid,
+        matchReason: matchReason,
+      );
+      return;
+    }
+
     await SupabaseConfig.client.from('profile_swipes').upsert({
       'swiper_uid': myUid,
       'target_uid': targetUid,
-      'action': action,
-      if (matchReason != null) 'match_reason': matchReason,
+      'action': 'pass',
+      'match_reason': matchReason,
     });
     SupabaseConfig.notifyRefresh();
   }
@@ -231,20 +410,10 @@ class BondService {
     UserModel otherUser, {
     String? matchReason,
   }) async {
-    final myUid = currentUserId;
-    if (myUid == null) return;
-
-    await SupabaseConfig.client.rpc(
-      'create_or_get_bond',
-      params: {
-        'p_user1_uid': myUid,
-        'p_user2_uid': otherUser.uid,
-        'p_initiator_uid': myUid,
-        'p_stage': 1,
-        'p_match_reason': matchReason,
-      },
+    await sendBondRequest(
+      targetUid: otherUser.uid,
+      matchReason: matchReason,
     );
-    SupabaseConfig.notifyRefresh();
   }
 
   Stream<Map<String, int>> getNavBadgesStream() {
@@ -268,13 +437,14 @@ class BondService {
     );
   }
 
-  Future<List<UserModel>> searchBondedUsers(String query) async {
+  /// Case 2: Search any user by username/handle (@sunita.rai), phone (+977...), or name to send a bond request
+  Future<List<UserModel>> searchUsersForBonding(String query) async {
     final myUid = currentUserId;
     final cleanQuery = query.trim();
     if (myUid == null || cleanQuery.isEmpty) return [];
 
     final res = await SupabaseConfig.client.rpc(
-      'search_bonded_users',
+      'search_all_users_for_bonding',
       params: {
         'p_uid': myUid,
         'p_query': cleanQuery,
@@ -288,15 +458,22 @@ class BondService {
     }).toList();
   }
 
-  Future<void> confirmStageAdvance(BondModel bond) async {
-    final myUid = currentUserId;
-    if (myUid == null || bond.stage >= 3) return;
+  Future<List<UserModel>> searchBondedUsers(String query) async {
+    return searchUsersForBonding(query);
+  }
+
+  Future<void> confirmStageAdvance(
+    BondModel bond, {
+    String? userUidOverride,
+  }) async {
+    final uid = userUidOverride ?? currentUserId;
+    if (uid == null || bond.stage >= 3) return;
 
     await SupabaseConfig.client.rpc(
       'confirm_bond_stage',
       params: {
         'p_bond_id': bond.bondId,
-        'p_user_uid': myUid,
+        'p_user_uid': uid,
       },
     );
     SupabaseConfig.notifyRefresh();

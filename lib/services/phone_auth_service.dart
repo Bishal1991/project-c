@@ -1,7 +1,6 @@
 import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../supabase_config.dart';
 
 class PhoneAuthException implements Exception {
   PhoneAuthException(this.message);
@@ -11,43 +10,33 @@ class PhoneAuthException implements Exception {
   String toString() => message;
 }
 
-/// Phone + 6-digit-code sign-in (Firebase). Create one instance per flow and
-/// pass the same instance from the login/register page to OtpPage, because it
-/// remembers the verification id.
+/// Phone + 6-digit-code sign-in (Firebase Auth) with profile lookup & storage in Supabase PostgreSQL.
 class PhoneAuthService {
-  PhoneAuthService({FirebaseAuth? auth, FirebaseFirestore? db})
-      : _auth = auth ?? FirebaseAuth.instance,
-        _db = db ?? FirebaseFirestore.instance;
+  PhoneAuthService({FirebaseAuth? auth})
+      : _auth = auth ?? FirebaseAuth.instance;
 
   static const countryCode = '+977';
 
   final FirebaseAuth _auth;
-  final FirebaseFirestore _db;
 
   String? _verificationId;
   int? _resendToken;
   String? _lastPhone;
 
-  /// Does an account exist for this 10-digit number?
-  ///
-  /// Firebase phone auth can't tell login from sign-up, so this looks the
-  /// number up in `users` (see saveProfile). IMPORTANT: this runs before the
-  /// person is signed in, so your Firestore rules (or a Cloud Function you
-  /// call instead) must allow it. Replace this body if you check differently.
+  /// Checks if an account exists for this 10-digit number in Supabase `public.users`.
   Future<bool> isRegistered(String localNumber) async {
     try {
-      final snap = await _db
-          .collection('users')
-          .where('phoneNumber', isEqualTo: '$countryCode$localNumber')
-          .limit(1)
-          .get();
-      return snap.docs.isNotEmpty;
-    } on FirebaseException catch (e) {
-      throw PhoneAuthException(_friendly(e));
+      final res = await SupabaseConfig.client.rpc(
+        'is_phone_registered',
+        params: {'p_phone': '$countryCode$localNumber'},
+      );
+      return res == true;
+    } catch (e) {
+      throw PhoneAuthException('Could not check this number. Please try again.');
     }
   }
 
-  /// Sends the 6-digit SMS code. Completes once the SMS has been sent.
+  /// Sends the 6-digit SMS code via Firebase Auth.
   Future<void> sendCode(String localNumber, {bool resend = false}) {
     final completer = Completer<void>();
     _lastPhone = '$countryCode$localNumber';
@@ -56,8 +45,6 @@ class PhoneAuthService {
       phoneNumber: _lastPhone!,
       timeout: const Duration(seconds: 60),
       forceResendingToken: resend ? _resendToken : null,
-      // Android can auto-read the SMS; we always let the person confirm the
-      // code themselves so both platforms behave the same.
       verificationCompleted: (_) {},
       verificationFailed: (e) {
         if (!completer.isCompleted) {
@@ -81,24 +68,30 @@ class PhoneAuthService {
       throw PhoneAuthException('This code has expired. Request a new one.');
     }
     try {
-      return await _auth.signInWithCredential(
+      final cred = await _auth.signInWithCredential(
         PhoneAuthProvider.credential(verificationId: id, smsCode: code),
       );
+      await saveProfile(cred);
+      return cred;
     } on FirebaseAuthException catch (e) {
       throw PhoneAuthException(_friendly(e));
     }
   }
 
-  /// Called after a successful *register* verification.
+  /// Syncs the authenticated phone user to Supabase `public.users`.
   Future<void> saveProfile(UserCredential cred) async {
     final user = cred.user;
     if (user == null) return;
-    await _db.collection('users').doc(user.uid).set({
-      'phoneNumber': user.phoneNumber ?? _lastPhone,
-      'ageConfirmed': true,
-      'acceptedGuidelinesAt': FieldValue.serverTimestamp(),
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    final phone = user.phoneNumber ?? _lastPhone;
+    await SupabaseConfig.client.rpc(
+      'upsert_user_profile',
+      params: {
+        'p_uid': user.uid,
+        'p_display_name': user.displayName ?? phone ?? 'User',
+        'p_phone_number': phone,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
   }
 
   String _friendly(FirebaseException e) {
@@ -114,8 +107,6 @@ class PhoneAuthService {
         return 'This code has expired. Request a new one.';
       case 'network-request-failed':
         return 'No connection. Check your internet and try again.';
-      case 'permission-denied':
-        return 'Could not check this number. Please try again later.';
       default:
         return e.message ?? 'Something went wrong. Please try again.';
     }

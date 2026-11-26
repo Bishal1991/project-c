@@ -5,7 +5,7 @@ import '../widgets/chat_list_widget.dart';
 import 'bond_page.dart';
 import 'events_page.dart';
 import 'home_page.dart';
-import 'profilePage.dart';
+import 'profile_page.dart';
 
 class MainNavigationPage extends StatefulWidget {
   const MainNavigationPage({super.key});

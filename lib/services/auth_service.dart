@@ -6,15 +6,40 @@ import '../supabase_config.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '717226428903-2s85228cv2s7h957lr8uju0j8d627kok.apps.googleusercontent.com',
+    serverClientId:
+        '717226428903-2s85228cv2s7h957lr8uju0j8d627kok.apps.googleusercontent.com',
   );
 
   User? get currentUser => _auth.currentUser;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
+  // Stream the current user's profile from Supabase public.users
+  Stream<Map<String, dynamic>> getUserProfileStream() {
+    final user = _auth.currentUser;
+    if (user == null) return const Stream.empty();
+
+    return SupabaseConfig.watchQuery(
+      () async {
+        final res = await SupabaseConfig.client.rpc(
+          'get_user_profile',
+          params: {'p_uid': user.uid},
+        );
+        if (res is Map) {
+          return Map<String, dynamic>.from(res);
+        }
+        return <String, dynamic>{};
+      },
+      tables: const ['users'],
+      channelPrefix: 'user_profile_${user.uid}',
+    );
+  }
+
   // Upsert user profile into Supabase PostgreSQL (and auto-seed demo bonds if first login)
-  Future<void> syncUserProfile({String? displayName, String? phoneNumber}) async {
+  Future<void> syncUserProfile({
+    String? displayName,
+    String? phoneNumber,
+  }) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -48,6 +73,38 @@ class AuthService {
     }
   }
 
+  Future<void> saveUserProfileDetails({
+    required String displayName,
+    String? username,
+    int? age,
+    String? city,
+    String? area,
+    String? community,
+    List<String>? languages,
+    String? bio,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) throw 'Not logged in';
+
+    await user.updateDisplayName(displayName);
+    await SupabaseConfig.client.rpc(
+      'save_user_profile_details',
+      params: {
+        'p_uid': user.uid,
+        'p_display_name': displayName,
+        'p_username': username,
+        'p_age': age,
+        'p_city': city,
+        'p_area': area,
+        'p_community': community,
+        'p_languages': languages,
+        'p_bio': bio,
+        'p_phone_number': user.phoneNumber,
+      },
+    );
+    SupabaseConfig.notifyRefresh();
+  }
+
   Future<void> updateDisplayName(String name) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -63,7 +120,8 @@ class AuthService {
         return null;
       }
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,

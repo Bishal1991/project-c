@@ -19,6 +19,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
   final _searchController = TextEditingController();
   List<UserModel> _searchResults = [];
   bool _isSearching = false;
+  String? _sendingBondUid;
 
   static const _bg = Color(0xFF110E20);
   static const _cardBg = Color(0xFF1B162E);
@@ -26,6 +27,8 @@ class _ChatListWidgetState extends State<ChatListWidget> {
   static const _purple = Color(0xFF7B5CFA);
   static const _mutedCircle = Color(0xFF332E47);
   static const _mutedText = Color(0xFF9C96B3);
+  static const _requestAmber = Color(0xFFF0A262);
+  static const _requestBg = Color(0xFF382218);
 
   static const _palettes = [
     (Color(0xFF3E281F), Color(0xFFE59A5C)),
@@ -83,11 +86,15 @@ class _ChatListWidgetState extends State<ChatListWidget> {
     return DateFormat('d MMM').format(dt);
   }
 
-  String _stageLabel(int? stage) {
-    final idx = ((stage ?? 1) - 1).clamp(0, BondModel.stageNames.length - 1);
+  String _stageLabel(int stage, {required bool isIncomingRequest}) {
+    if (stage <= 0) {
+      return isIncomingRequest ? 'Bond Request' : 'Request Sent';
+    }
+    final idx = (stage - 1).clamp(0, BondModel.stageNames.length - 1);
     return BondModel.stageNames[idx];
   }
 
+  // Case 2: Search user by ID (@username), phone number, or name
   Future<void> _searchUsers(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
@@ -98,10 +105,37 @@ class _ChatListWidgetState extends State<ChatListWidget> {
     }
     setState(() => _isSearching = true);
     try {
-      final results = await _bondService.searchBondedUsers(query);
+      final results = await _bondService.searchUsersForBonding(query);
       if (mounted) setState(() => _searchResults = results);
     } catch (e) {
       debugPrint('Search failed: $e');
+    }
+  }
+
+  Future<void> _handleSendBondFromSearch(UserModel user) async {
+    setState(() => _sendingBondUid = user.uid);
+    try {
+      final res = await _bondService.sendBondRequest(
+        targetUid: user.uid,
+        matchReason: 'Connected via Miteri ID search (${user.handle})',
+      );
+      if (!mounted) return;
+      final chatId =
+          res['bondId'] as String? ??
+          _chatService.getChatId(_chatService.currentUserId ?? '', user.uid);
+
+      _searchController.clear();
+      _searchUsers('');
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              ChatConversationPage(otherUser: user, chatId: chatId),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _sendingBondUid = null);
     }
   }
 
@@ -122,7 +156,6 @@ class _ChatListWidgetState extends State<ChatListWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header matching "Your bonds"
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 22, 20, 14),
               child: Text(
@@ -137,7 +170,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
               ),
             ),
 
-            // Dark-themed Search Bar
+            // Case 2 Search Bar: Search any user by ID (@username), phone, or name to bond or chat
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: TextField(
@@ -146,8 +179,8 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 cursorColor: _purple,
                 decoration: InputDecoration(
-                  hintText: 'Search bonded friends...',
-                  hintStyle: const TextStyle(color: _mutedText, fontSize: 15),
+                  hintText: 'Search by @username, phone ID, or name to bond...',
+                  hintStyle: const TextStyle(color: _mutedText, fontSize: 14.5),
                   prefixIcon: const Icon(Icons.search, color: _mutedText),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
@@ -181,7 +214,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                 child: _searchResults.isEmpty
                     ? const Center(
                         child: Text(
-                          'No bonded friends match your search',
+                          'No user found with that ID or phone number',
                           style: TextStyle(color: _mutedText, fontSize: 15),
                         ),
                       )
@@ -191,63 +224,114 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final user = _searchResults[index];
-                          final subtitle = user.region?.isNotEmpty == true
-                              ? user.region!
-                              : user.culturalLabel;
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      ChatConversationPage(otherUser: user),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: _cardBg,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: _cardBorder),
-                              ),
-                              child: Row(
-                                children: [
-                                  _buildAvatar(user, radius: 24),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          user.displayName,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                          final bondStage = user.bondStage;
+                          final isSending = _sendingBondUid == user.uid;
+                          final subtitle = [
+                            user.handle,
+                            if (user.culturalLabel.isNotEmpty)
+                              user.culturalLabel,
+                          ].join(' · ');
+
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: _cardBg,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: _cardBorder),
+                            ),
+                            child: Row(
+                              children: [
+                                _buildAvatar(user, radius: 24),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        user.displayName,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                        if (subtitle.isNotEmpty) ...[
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            subtitle,
-                                            style: const TextStyle(
-                                              color: _mutedText,
-                                              fontSize: 13.5,
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        subtitle,
+                                        style: const TextStyle(
+                                          color: _mutedText,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (bondStage == null)
+                                  ElevatedButton.icon(
+                                    onPressed: isSending
+                                        ? null
+                                        : () => _handleSendBondFromSearch(user),
+                                    icon: isSending
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
                                             ),
+                                          )
+                                        : const Icon(
+                                            Icons.favorite_border_rounded,
+                                            size: 16,
                                           ),
-                                        ],
-                                      ],
+                                    label: const Text('Bond'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _purple,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  OutlinedButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              ChatConversationPage(
+                                                otherUser: user,
+                                                chatId: user.bondId,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: bondStage == 0
+                                          ? _requestAmber
+                                          : const Color(0xFFBBA8FF),
+                                      side: BorderSide(
+                                        color: bondStage == 0
+                                            ? _requestAmber
+                                            : _purple,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      bondStage == 0
+                                          ? 'Pending'
+                                          : _stageLabel(
+                                              bondStage,
+                                              isIncomingRequest: false,
+                                            ),
                                     ),
                                   ),
-                                  const Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: _mutedText,
-                                  ),
-                                ],
-                              ),
+                              ],
                             ),
                           );
                         },
@@ -297,7 +381,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                                 ),
                                 SizedBox(height: 14),
                                 Text(
-                                  'No bonded chats yet',
+                                  'No chats or bond requests yet',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 18,
@@ -306,7 +390,7 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                                 ),
                                 SizedBox(height: 8),
                                 Text(
-                                  'Open a chat from Your bonds to start sharing stories and festival plans.',
+                                  'Swipe right on Discover or search a friend\'s @username above to send an automated bond request.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _mutedText,
@@ -327,7 +411,18 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                       itemBuilder: (context, index) {
                         final chatData = chats[index];
                         final chatId = chatData['chatId'] as String? ?? '';
-                        final stage = (chatData['stage'] as num?)?.toInt() ?? 1;
+                        final stage = (chatData['stage'] as num?)?.toInt() ?? 0;
+                        final initiatorUid =
+                            chatData['initiatorUid'] as String? ?? '';
+                        final isPending = stage == 0;
+                        final isIncomingRequest =
+                            isPending && initiatorUid != myUid;
+                        final datePassed =
+                            (chatData['upcomingEventDatePassed'] as bool?) ??
+                            false;
+                        final eventTitle =
+                            chatData['upcomingEventTitle'] as String?;
+
                         final lastMessage =
                             chatData['lastMessage'] as String? ?? '';
                         final lastSenderId =
@@ -336,14 +431,16 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                           chatData['lastMessageTime'],
                         );
                         final hasUnreadFromPartner =
-                            lastMessage.isNotEmpty &&
-                            lastSenderId.isNotEmpty &&
-                            lastSenderId != myUid;
+                            isIncomingRequest ||
+                            (lastMessage.isNotEmpty &&
+                                lastSenderId.isNotEmpty &&
+                                lastSenderId != myUid);
 
                         final otherUser = UserModel(
                           uid: chatData['otherUid'] as String? ?? '',
                           displayName:
                               chatData['otherName'] as String? ?? 'User',
+                          username: chatData['otherUsername'] as String?,
                           email: chatData['otherEmail'] as String?,
                           phoneNumber: chatData['otherPhone'] as String?,
                           photoUrl: chatData['otherPhoto'] as String?,
@@ -376,10 +473,12 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                               color: _cardBg,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: hasUnreadFromPartner
-                                    ? _purple.withValues(alpha: 0.65)
-                                    : _cardBorder,
-                                width: 1.2,
+                                color: isIncomingRequest
+                                    ? _requestAmber
+                                    : (hasUnreadFromPartner
+                                          ? _purple.withValues(alpha: 0.65)
+                                          : _cardBorder),
+                                width: isIncomingRequest ? 1.5 : 1.2,
                               ),
                             ),
                             child: Row(
@@ -405,29 +504,63 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
+                                          // Stage or Request Badge: Chinari is ONLY shown when stage >= 1!
                                           Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 9,
                                               vertical: 3,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: stage >= 2
-                                                  ? _purple.withValues(
-                                                      alpha: 0.2,
-                                                    )
-                                                  : _mutedCircle,
+                                              color: isPending
+                                                  ? _requestBg
+                                                  : (stage >= 2
+                                                        ? _purple.withValues(
+                                                            alpha: 0.22,
+                                                          )
+                                                        : _mutedCircle),
                                               borderRadius:
                                                   BorderRadius.circular(10),
                                             ),
-                                            child: Text(
-                                              _stageLabel(stage),
-                                              style: TextStyle(
-                                                color: stage >= 2
-                                                    ? const Color(0xFFBBA8FF)
-                                                    : _mutedText,
-                                                fontSize: 11.5,
-                                                fontWeight: FontWeight.w600,
-                                              ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (stage >= 1) ...[
+                                                  Icon(
+                                                    stage >= 3
+                                                        ? Icons.auto_awesome
+                                                        : (stage == 2
+                                                              ? Icons
+                                                                    .handshake_outlined
+                                                              : Icons
+                                                                    .verified_outlined),
+                                                    size: 12,
+                                                    color: stage >= 2
+                                                        ? const Color(
+                                                            0xFFBBA8FF,
+                                                          )
+                                                        : Colors.white70,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                ],
+                                                Text(
+                                                  _stageLabel(
+                                                    stage,
+                                                    isIncomingRequest:
+                                                        isIncomingRequest,
+                                                  ),
+                                                  style: TextStyle(
+                                                    color: isPending
+                                                        ? _requestAmber
+                                                        : (stage >= 2
+                                                              ? const Color(
+                                                                  0xFFBBA8FF,
+                                                                )
+                                                              : Colors.white),
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                           if (lastTime.isNotEmpty) ...[
@@ -450,28 +583,58 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                                       if (regionOrCulture.isNotEmpty) ...[
                                         const SizedBox(height: 2),
                                         Text(
-                                          regionOrCulture,
+                                          '${otherUser.handle} · $regionOrCulture',
                                           style: const TextStyle(
                                             color: _mutedText,
-                                            fontSize: 13,
+                                            fontSize: 12.5,
                                           ),
                                         ),
                                       ],
                                       const SizedBox(height: 6),
+                                      if (datePassed &&
+                                          eventTitle != null &&
+                                          stage == 1)
+                                        Container(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 4,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _requestBg,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            'Did you meet at $eventTitle? Tap to confirm →',
+                                            style: const TextStyle(
+                                              color: _requestAmber,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
                                       Row(
                                         children: [
                                           Expanded(
                                             child: Text(
-                                              lastMessage.isNotEmpty
-                                                  ? lastMessage
-                                                  : 'Tap to say Namaste',
+                                              isIncomingRequest
+                                                  ? 'Tap to accept & send automated greeting'
+                                                  : (lastMessage.isNotEmpty
+                                                        ? lastMessage
+                                                        : 'Tap to open chat'),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                color: hasUnreadFromPartner
-                                                    ? Colors.white
-                                                    : _mutedText,
-                                                fontSize: 14.5,
+                                                color: isIncomingRequest
+                                                    ? _requestAmber
+                                                    : (hasUnreadFromPartner
+                                                          ? Colors.white
+                                                          : _mutedText),
+                                                fontSize: 14,
                                                 fontWeight: hasUnreadFromPartner
                                                     ? FontWeight.w600
                                                     : FontWeight.normal,
@@ -483,8 +646,10 @@ class _ChatListWidgetState extends State<ChatListWidget> {
                                             Container(
                                               width: 9,
                                               height: 9,
-                                              decoration: const BoxDecoration(
-                                                color: _purple,
+                                              decoration: BoxDecoration(
+                                                color: isIncomingRequest
+                                                    ? _requestAmber
+                                                    : _purple,
                                                 shape: BoxShape.circle,
                                               ),
                                             ),

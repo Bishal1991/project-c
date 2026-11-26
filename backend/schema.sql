@@ -158,15 +158,7 @@ INSERT INTO festivals (name, community, region, event_date, etiquette_notes, des
   ('Maghe Sankranti', 'Tharu / Magar', 'Terai & Hills', '15 Jan', 'Share til ko laddu and yam with hosts.', 'Mid-winter festival celebrating the end of the winter solstice.')
 ON CONFLICT (name) DO NOTHING;
 
--- Seed demo partner accounts from the design report & mockup
-INSERT INTO users (uid, display_name, email, community, region, age, college, interests, is_onboarded) VALUES
-  ('demo_sunita', 'Sunita', 'sunita.rai@mitjyu.np', 'Rai', 'Hill region', 21, 'Patan Multiple Campus', ARRAY['Photography', 'Folk Dance'], TRUE),
-  ('demo_prakash', 'Prakash', 'prakash.newar@mitjyu.np', 'Newar', 'Valley', 22, 'PCPS College', ARRAY['Cooking', 'Heritage Walks'], TRUE)
-ON CONFLICT (uid) DO UPDATE SET
-  display_name = EXCLUDED.display_name,
-  community = EXCLUDED.community,
-  region = EXCLUDED.region,
-  is_onboarded = TRUE;
+-- (Seed demo accounts removed; all users are real Firebase Auth accounts synced to public.users)
 
 
 -- ============================================================================
@@ -381,81 +373,8 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
-DECLARE
-  v_cnt INT;
-  v_udhauli_id INT;
-  v_s1 TEXT;
-  v_s2 TEXT;
-  v_sunita_bond_id TEXT;
-  v_p1 TEXT;
-  v_p2 TEXT;
-  v_prakash_bond_id TEXT;
 BEGIN
-  IF p_uid IS NULL OR p_uid = '' OR p_uid IN ('demo_sunita', 'demo_prakash') THEN
-    RETURN;
-  END IF;
-
-  SELECT COUNT(*)::INT INTO v_cnt
-  FROM public.bonds
-  WHERE user1_uid = p_uid OR user2_uid = p_uid;
-
-  IF v_cnt > 0 THEN
-    RETURN;
-  END IF;
-
-  SELECT id INTO v_udhauli_id
-  FROM public.festivals
-  WHERE name = 'Udhauli'
-  LIMIT 1;
-
-  IF p_uid < 'demo_sunita' THEN
-    v_s1 := p_uid;
-    v_s2 := 'demo_sunita';
-  ELSE
-    v_s1 := 'demo_sunita';
-    v_s2 := p_uid;
-  END IF;
-  v_sunita_bond_id := v_s1 || '_' || v_s2;
-
-  INSERT INTO public.bonds (
-    id, user1_uid, user2_uid, initiator_uid, stage, match_reason,
-    festivals_shared, message_count, upcoming_festival_id, upcoming_event_note, created_at
-  ) VALUES (
-    v_sunita_bond_id, v_s1, v_s2, p_uid, 2, 'Different community (Rai) · Both into Photography',
-    1, 30, v_udhauli_id, 'You will both confirm you met afterwards to reach Mit.',
-    NOW() - INTERVAL '9 days'
-  ) ON CONFLICT (id) DO NOTHING;
-
-  INSERT INTO public.bond_history (bond_id, entry, created_at) VALUES
-    (v_sunita_bond_id, 'Bonded at Chinari', NOW() - INTERVAL '9 days'),
-    (v_sunita_bond_id, 'Reached Saathi after Udhauli prep', NOW() - INTERVAL '3 days');
-
-  INSERT INTO public.messages (bond_id, sender_uid, text, created_at) VALUES
-    (v_sunita_bond_id, 'demo_sunita', 'Namaste! Excited to invite you to Udhauli on 15 Dec.', NOW() - INTERVAL '2 hours'),
-    (v_sunita_bond_id, p_uid, 'Namaste Sunita! Looking forward to joining the preparations.', NOW() - INTERVAL '1 hour');
-
-  IF p_uid < 'demo_prakash' THEN
-    v_p1 := p_uid;
-    v_p2 := 'demo_prakash';
-  ELSE
-    v_p1 := 'demo_prakash';
-    v_p2 := p_uid;
-  END IF;
-  v_prakash_bond_id := v_p1 || '_' || v_p2;
-
-  INSERT INTO public.bonds (
-    id, user1_uid, user2_uid, initiator_uid, stage, match_reason,
-    festivals_shared, message_count, created_at
-  ) VALUES (
-    v_prakash_bond_id, v_p1, v_p2, 'demo_prakash', 1, 'Different community (Newar) · Valley heritage',
-    0, 5, NOW() - INTERVAL '2 days'
-  ) ON CONFLICT (id) DO NOTHING;
-
-  INSERT INTO public.bond_history (bond_id, entry, created_at) VALUES
-    (v_prakash_bond_id, 'Bonded at Chinari', NOW() - INTERVAL '2 days');
-
-  INSERT INTO public.messages (bond_id, sender_uid, text, created_at) VALUES
-    (v_prakash_bond_id, 'demo_prakash', 'Jojolapa! Have you ever tried making Yomari?', NOW() - INTERVAL '1 day');
+  RETURN;
 END;
 $$;
 

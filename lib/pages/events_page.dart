@@ -174,19 +174,21 @@ class _EventsPageState extends State<EventsPage> {
                           ),
                         ),
                         subtitle: Text(
-                          '${b.daysBonded} days bonded · Stage: ${BondModel.stageNames[b.stage - 1]}',
+                          '${b.daysBonded} days bonded · Stage: ${b.currentStageLabel}',
                           style: const TextStyle(color: _mutedText),
                         ),
                         trailing: ElevatedButton(
                           onPressed: () async {
                             Navigator.pop(ctx);
-                            await _bondService.setBondFestival(
+                            await _bondService.inviteToFestival(
                               bondId: b.bondId,
                               festivalId: fest.id,
                               note:
                                   'Invited to ${fest.name} together (${fest.eventDate}).',
                             );
-                            _showToast('Invited ${other.displayName}!');
+                            _showToast(
+                              'Invited ${other.displayName} & sent message in Chat!',
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _purple,

@@ -17,9 +17,13 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   late final TextEditingController _phone;
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _service = PhoneAuthService();
   final _authService = AuthService();
 
+  bool _useEmailMode = false;
+  bool _obscurePassword = true;
   bool _loading = false;
   bool _googleLoading = false;
   bool _notRegistered = false;
@@ -34,14 +38,16 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void dispose() {
     _phone.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  bool get _valid => RegExp(r'^\d{10}$').hasMatch(_phone.text);
+  bool get _validPhone => RegExp(r'^\d{10}$').hasMatch(_phone.text);
 
   Future<void> _sendCode() async {
     if (_loading) return;
-    if (!_valid) {
+    if (!_validPhone) {
       setState(() => _error = 'Enter a 10-digit mobile number.');
       return;
     }
@@ -53,18 +59,6 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final exists = await _service.isRegistered(_phone.text);
-      if (!exists) {
-        if (mounted) {
-          setState(() {
-            _notRegistered = true;
-            _error =
-                "We don't have an account for this number. Check it, or create an account.";
-          });
-        }
-        return;
-      }
-
       await _service.sendCode(_phone.text);
       if (!mounted) return;
       Navigator.push(
@@ -82,6 +76,39 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       debugPrint('Send code failed: $e');
       if (mounted) setState(() => _error = 'Something went wrong. Try again.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _handleEmailLogin() async {
+    if (_loading) return;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _error = 'Enter both your email and password.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await _authService.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const MainNavigationPage()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -121,37 +148,119 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return AuthScaffold(
       title: 'Welcome back',
-      subtitle: 'Enter your mobile number. We will text you a 6-digit code.',
+      subtitle: _useEmailMode
+          ? 'Sign in with your Firebase email and password.'
+          : 'Enter your mobile number. We will text you a 6-digit code.',
       children: [
-        PhoneField(
-          controller: _phone,
-          hasError: _error != null,
-          enabled: !_loading,
-          onChanged: (_) {
-            if (_error != null || _notRegistered) {
-              setState(() {
-                _error = null;
-                _notRegistered = false;
-              });
-            }
-          },
-          onSubmitted: (_) => _sendCode(),
+        // Toggle between Phone OTP and Email/Password
+        Row(
+          children: [
+            Expanded(
+              child: ChoiceChip(
+                label: const Center(child: Text('Phone OTP')),
+                selected: !_useEmailMode,
+                showCheckmark: false,
+                onSelected: (_) => setState(() {
+                  _useEmailMode = false;
+                  _error = null;
+                }),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ChoiceChip(
+                label: const Center(child: Text('Email & Password')),
+                selected: _useEmailMode,
+                showCheckmark: false,
+                onSelected: (_) => setState(() {
+                  _useEmailMode = true;
+                  _error = null;
+                }),
+              ),
+            ),
+          ],
         ),
-        if (_error != null) ErrorLine(_error!),
-        const SizedBox(height: 24),
-        PrimaryButton(
-          label: 'Send code',
-          loading: _loading,
-          onPressed: _sendCode,
-        ),
-        const SizedBox(height: 12),
-        if (_notRegistered)
-          SecondaryButton(label: 'Create account', onPressed: _goToRegister)
-        else
-          TextLinkButton(
-            'New here? Create account',
-            onPressed: _loading ? null : _goToRegister,
+        const SizedBox(height: 18),
+
+        if (!_useEmailMode) ...[
+          PhoneField(
+            controller: _phone,
+            hasError: _error != null,
+            enabled: !_loading,
+            onChanged: (_) {
+              if (_error != null || _notRegistered) {
+                setState(() {
+                  _error = null;
+                  _notRegistered = false;
+                });
+              }
+            },
+            onSubmitted: (_) => _sendCode(),
           ),
+          if (_error != null) ErrorLine(_error!),
+          const SizedBox(height: 24),
+          PrimaryButton(
+            label: 'Send code',
+            loading: _loading,
+            onPressed: _sendCode,
+          ),
+          const SizedBox(height: 12),
+          if (_notRegistered)
+            SecondaryButton(label: 'Create account', onPressed: _goToRegister)
+          else
+            TextLinkButton(
+              'New here? Create account',
+              onPressed: _loading ? null : _goToRegister,
+            ),
+        ] else ...[
+          TextField(
+            controller: _emailController,
+            enabled: !_loading,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: 'Email address',
+              prefixIcon: const Icon(Icons.email_outlined),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _passwordController,
+            enabled: !_loading,
+            obscureText: _obscurePassword,
+            onSubmitted: (_) => _handleEmailLogin(),
+            decoration: InputDecoration(
+              labelText: 'Password',
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          if (_error != null) ErrorLine(_error!),
+          const SizedBox(height: 22),
+          PrimaryButton(
+            label: 'Sign in with Email',
+            loading: _loading,
+            onPressed: _handleEmailLogin,
+          ),
+        ],
+
         const SizedBox(height: 16),
         Row(
           children: const [

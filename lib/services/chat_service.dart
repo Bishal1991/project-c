@@ -11,24 +11,6 @@ class ChatService {
     return uid1.compareTo(uid2) < 0 ? '${uid1}_$uid2' : '${uid2}_$uid1';
   }
 
-  // Ensure a bond/chat row exists in Supabase PostgreSQL between the current user and otherUser
-  Future<String> getOrCreateChatRoom(UserModel otherUser) async {
-    final myUid = currentUserId;
-    if (myUid == null) throw 'Not logged in';
-
-    final chatId = getChatId(myUid, otherUser.uid);
-    await SupabaseConfig.client.rpc(
-      'create_or_get_bond',
-      params: {
-        'p_user1_uid': myUid,
-        'p_user2_uid': otherUser.uid,
-        'p_initiator_uid': myUid,
-        'p_stage': 1,
-      },
-    );
-    return chatId;
-  }
-
   Future<void> sendMessage({
     required String chatId,
     required String text,
@@ -42,7 +24,7 @@ class ChatService {
       'bond_id': chatId,
       'sender_uid': myUid,
       'text': text.trim(),
-      if (mediaUrl != null) 'media_url': mediaUrl,
+      'media_url': mediaUrl,
     });
     SupabaseConfig.notifyRefresh();
   }
@@ -60,7 +42,7 @@ class ChatService {
         final list = (res as List<dynamic>? ?? const []);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
       },
-      tables: const ['messages', 'bonds'],
+      tables: const ['messages', 'bonds', 'bond_confirmations'],
       channelPrefix: 'user_chats_$myUid',
     );
   }
@@ -75,7 +57,7 @@ class ChatService {
         final list = (res as List<dynamic>? ?? const []);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
       },
-      tables: const ['messages'],
+      tables: const ['messages', 'bonds'],
       channelPrefix: 'chat_messages_$chatId',
     );
   }

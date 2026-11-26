@@ -40,7 +40,7 @@ class _BondPageState extends State<BondPage> {
           return const Padding(
             padding: EdgeInsets.all(28),
             child: Text(
-              'You are already bonded with all registered users in Supabase.',
+              'You have already sent bond requests to all discoverable users.',
               style: TextStyle(color: Colors.white, fontSize: 15),
               textAlign: TextAlign.center,
             ),
@@ -54,12 +54,17 @@ class _BondPageState extends State<BondPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Start a new Chinari bond',
+                  'Send a bond request',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 19,
                     fontWeight: FontWeight.bold,
                   ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Sends your automated greeting in Chat. Once they accept with their automated message, you both obtain Chinari!',
+                  style: TextStyle(color: _mutedText, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
                 Flexible(
@@ -71,8 +76,8 @@ class _BondPageState extends State<BondPage> {
                     itemBuilder: (_, i) {
                       final u = users[i];
                       final subtitle = u.region?.isNotEmpty == true
-                          ? u.region!
-                          : u.culturalLabel;
+                          ? '${u.handle} · ${u.region!}'
+                          : '${u.handle} · ${u.culturalLabel}';
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: _BondAvatar(user: u, radius: 22),
@@ -83,16 +88,29 @@ class _BondPageState extends State<BondPage> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        subtitle: subtitle.isNotEmpty
-                            ? Text(
-                                subtitle,
-                                style: const TextStyle(color: _mutedText),
-                              )
-                            : null,
+                        subtitle: Text(
+                          subtitle,
+                          style: const TextStyle(
+                            color: _mutedText,
+                            fontSize: 12.5,
+                          ),
+                        ),
                         trailing: ElevatedButton(
                           onPressed: () async {
                             Navigator.pop(ctx);
-                            await _bondService.createBondWithUser(u);
+                            final res = await _bondService.sendBondRequest(
+                              targetUid: u.uid,
+                            );
+                            if (!mounted) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ChatConversationPage(
+                                  otherUser: u,
+                                  chatId: res['bondId'] as String?,
+                                ),
+                              ),
+                            );
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _purple,
@@ -101,7 +119,7 @@ class _BondPageState extends State<BondPage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: const Text('Bond'),
+                          child: const Text('Send Request'),
                         ),
                       );
                     },
@@ -129,7 +147,6 @@ class _BondPageState extends State<BondPage> {
             return ListView(
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
               children: [
-                // Header: "Your bonds" in Georgia serif + Add bond button
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -145,7 +162,7 @@ class _BondPageState extends State<BondPage> {
                     ),
                     IconButton(
                       onPressed: _showAddBondSheet,
-                      tooltip: 'Add bond from Supabase users',
+                      tooltip: 'Send bond request',
                       icon: const Icon(
                         Icons.person_add_alt_1_outlined,
                         color: _mutedText,
@@ -156,7 +173,7 @@ class _BondPageState extends State<BondPage> {
                 ),
                 const SizedBox(height: 18),
 
-                // Dynamic "What do the stages mean?" accordion pulled from Supabase bond_stages
+                // Dynamic "What do the stages mean?" accordion
                 InkWell(
                   onTap: () => setState(
                     () => _stagesMeaningExpanded = !_stagesMeaningExpanded,
@@ -306,7 +323,7 @@ class _BondPageState extends State<BondPage> {
                         ),
                         const SizedBox(height: 14),
                         const Text(
-                          'No bonds yet',
+                          'No Chinari bonds yet',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -315,7 +332,7 @@ class _BondPageState extends State<BondPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Connect with someone across communities to start your Chinari → Saathi → Mit journey.',
+                          'Send a bond request on Discover or Chat. Once your friend replies with their automated message, you will obtain Chinari!',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: _mutedText, fontSize: 14),
                         ),
@@ -323,7 +340,7 @@ class _BondPageState extends State<BondPage> {
                         ElevatedButton.icon(
                           onPressed: _showAddBondSheet,
                           icon: const Icon(Icons.add),
-                          label: const Text('Find someone to bond'),
+                          label: const Text('Send a bond request'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _purple,
                             foregroundColor: Colors.white,
@@ -361,10 +378,10 @@ class _BondAvatar extends StatelessWidget {
   const _BondAvatar({required this.user, this.radius = 27});
 
   static const _palettes = [
-    (Color(0xFF3E281F), Color(0xFFE59A5C)), // Warm brown + amber
-    (Color(0xFF173245), Color(0xFF88C0E6)), // Deep navy + sky blue
-    (Color(0xFF2B2444), Color(0xFFB59DFF)), // Deep plum + lavender
-    (Color(0xFF1F3830), Color(0xFF7DD8B4)), // Deep forest + mint
+    (Color(0xFF3E281F), Color(0xFFE59A5C)),
+    (Color(0xFF173245), Color(0xFF88C0E6)),
+    (Color(0xFF2B2444), Color(0xFFB59DFF)),
+    (Color(0xFF1F3830), Color(0xFF7DD8B4)),
   ];
 
   (Color, Color) _pickPalette(String name) {
@@ -424,16 +441,35 @@ class _BondCardState extends State<_BondCard> {
   bool _historyExpanded = false;
   bool _confirming = false;
 
-  Future<void> _handleConfirm() async {
+  Future<void> _handleVerifyMeetup(
+    bool didMeet, {
+    String? userUidOverride,
+  }) async {
     setState(() => _confirming = true);
     try {
-      await widget.bondService.confirmStageAdvance(widget.bond);
+      await widget.bondService.verifyFestivalMeetup(
+        bondId: widget.bond.bondId,
+        didMeet: didMeet,
+        userUidOverride: userUidOverride,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not confirm: $e')),
+          SnackBar(content: Text('Could not update meetup: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
+  Future<void> _handleConfirmMit({String? userUidOverride}) async {
+    setState(() => _confirming = true);
+    try {
+      await widget.bondService.confirmStageAdvance(
+        widget.bond,
+        userUidOverride: userUidOverride,
+      );
     } finally {
       if (mounted) setState(() => _confirming = false);
     }
@@ -457,7 +493,7 @@ class _BondCardState extends State<_BondCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Plan festival with ${widget.bond.partner.displayName}',
+                'Invite ${widget.bond.partner.displayName} to a festival',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -501,7 +537,7 @@ class _BondCardState extends State<_BondCard> {
                           : null,
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await widget.bondService.setBondFestival(
+                        await widget.bondService.inviteToFestival(
                           bondId: widget.bond.bondId,
                           festivalId: f.id,
                         );
@@ -510,20 +546,6 @@ class _BondCardState extends State<_BondCard> {
                   },
                 ),
               ),
-              if (widget.bond.upcomingEventTitle != null)
-                TextButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await widget.bondService.setBondFestival(
-                      bondId: widget.bond.bondId,
-                      festivalId: null,
-                    );
-                  },
-                  child: const Text(
-                    'Clear scheduled festival',
-                    style: TextStyle(color: Colors.redAccent),
-                  ),
-                ),
             ],
           ),
         ),
@@ -534,7 +556,6 @@ class _BondCardState extends State<_BondCard> {
   void _showMoreActionsSheet() {
     final bond = widget.bond;
     final other = bond.partner;
-    final alreadyConfirmed = bond.stageConfirmations.contains(widget.myUid);
 
     showModalBottomSheet(
       context: context,
@@ -555,8 +576,8 @@ class _BondCardState extends State<_BondCard> {
                 ),
                 title: Text(
                   bond.upcomingEventTitle == null
-                      ? 'Schedule upcoming festival'
-                      : 'Change upcoming festival (${bond.upcomingEventTitle})',
+                      ? 'Invite to an upcoming festival'
+                      : 'Change festival (${bond.upcomingEventTitle})',
                   style: const TextStyle(color: Colors.white),
                 ),
                 onTap: () {
@@ -564,22 +585,20 @@ class _BondCardState extends State<_BondCard> {
                   _showFestivalPickerSheet();
                 },
               ),
-              if (bond.stage < 3)
+              if (bond.upcomingEventTitle != null &&
+                  !bond.upcomingEventDatePassed)
                 ListTile(
                   leading: const Icon(
-                    Icons.verified_outlined,
+                    Icons.fast_forward_rounded,
                     color: _BondPageState._purple,
                   ),
                   title: Text(
-                    alreadyConfirmed
-                        ? 'Confirmed meeting (waiting for ${other.displayName})'
-                        : 'Confirm we met to reach ${bond.nextStageName}',
+                    'Mark ${bond.upcomingEventTitle} date as passed (test meetup check)',
                     style: const TextStyle(color: Colors.white),
                   ),
-                  enabled: !alreadyConfirmed && !_confirming,
                   onTap: () {
                     Navigator.pop(ctx);
-                    _handleConfirm();
+                    widget.bondService.markFestivalDatePassed(bond.bondId);
                   },
                 ),
               ListTile(
@@ -674,7 +693,7 @@ class _BondCardState extends State<_BondCard> {
 
           const SizedBox(height: 20),
 
-          // Live stats line: "9 days · met 1 time · 32 messages"
+          // Live stats line
           Text(
             '${bond.daysBonded} ${bond.daysBonded == 1 ? 'day' : 'days'}'
             ' · met ${bond.festivalsShared} ${bond.festivalsShared == 1 ? 'time' : 'times'}'
@@ -685,64 +704,219 @@ class _BondCardState extends State<_BondCard> {
             ),
           ),
 
-          // Upcoming cultural event box
+          // Upcoming cultural event & Post-Festival Meetup Verification ("Did you meet?")
           if (hasEvent) ...[
             const SizedBox(height: 18),
-            InkWell(
-              onTap: (bond.stage < 3 && !alreadyConfirmed && !_confirming)
-                  ? _handleConfirm
-                  : _showFestivalPickerSheet,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _BondPageState._eventBg,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(
-                        Icons.calendar_today_outlined,
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _BondPageState._eventBg,
+                borderRadius: BorderRadius.circular(16),
+                border: bond.upcomingEventDatePassed
+                    ? Border.all(
                         color: _BondPageState._eventAccent,
-                        size: 20,
+                        width: 1.3,
+                      )
+                    : null,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.calendar_today_outlined,
+                          color: _BondPageState._eventAccent,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            bond.upcomingEventDate != null &&
-                                    bond.upcomingEventDate!.isNotEmpty
-                                ? '${bond.upcomingEventTitle} · ${bond.upcomingEventDate}'
-                                : bond.upcomingEventTitle!,
-                            style: const TextStyle(
-                              color: _BondPageState._eventAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              bond.upcomingEventDate != null &&
+                                      bond.upcomingEventDate!.isNotEmpty
+                                  ? '${bond.upcomingEventTitle} · ${bond.upcomingEventDate}'
+                                  : bond.upcomingEventTitle!,
+                              style: const TextStyle(
+                                color: _BondPageState._eventAccent,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            alreadyConfirmed
-                                ? 'Confirmed · waiting for ${other.displayName} to confirm.'
-                                : (bond.upcomingEventNote ??
-                                      'After you meet, you both confirm it. Mit is a choice for later.'),
-                            style: const TextStyle(
-                              color: _BondPageState._eventBody,
-                              fontSize: 14.5,
-                              height: 1.38,
+                            const SizedBox(height: 6),
+                            Text(
+                              bond.upcomingEventDatePassed && bond.stage == 1
+                                  ? (alreadyConfirmed
+                                        ? '✓ You confirmed that you met. Waiting for ${other.displayName} to confirm to become Saathi & unlock Mit.'
+                                        : 'Festival date passed! Did you meet ${other.displayName} at ${bond.upcomingEventTitle}?')
+                                  : (bond.upcomingEventNote ??
+                                        'After you meet, you both confirm it. Mit is a choice for later.'),
+                              style: const TextStyle(
+                                color: _BondPageState._eventBody,
+                                fontSize: 14.5,
+                                height: 1.38,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (bond.stage == 1 && !bond.upcomingEventDatePassed) ...[
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => widget.bondService
+                            .markFestivalDatePassed(bond.bondId),
+                        icon: const Icon(Icons.fast_forward_rounded, size: 16),
+                        label: const Text('Festival date passed → Verify'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: _BondPageState._eventAccent,
+                        ),
                       ),
                     ),
                   ],
+                  if (bond.stage == 1 &&
+                      bond.upcomingEventDatePassed &&
+                      !alreadyConfirmed) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _confirming
+                                ? null
+                                : () => _handleVerifyMeetup(false),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _BondPageState._eventBody,
+                              side: const BorderSide(
+                                color: _BondPageState._eventAccent,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('No, didn\'t meet'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _confirming
+                                ? null
+                                : () => _handleVerifyMeetup(true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _BondPageState._purple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: const Text('Yes, we met!'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ] else if (bond.stage == 1) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: _showFestivalPickerSheet,
+              icon: const Icon(
+                Icons.celebration_outlined,
+                color: _BondPageState._eventAccent,
+                size: 18,
+              ),
+              label: Text(
+                'Invite ${other.displayName} to a festival to unlock Saathi & Mit',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _BondPageState._eventAccent,
+                side: const BorderSide(color: _BondPageState._cardBorder),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
                 ),
+              ),
+            ),
+          ],
+
+          // Stage 2: Saathi achieved & Mit unlocked banner
+          if (bond.stage == 2) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _BondPageState._purple.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: _BondPageState._purple.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_open_rounded,
+                        color: Color(0xFFD6C9FF),
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Mit Stage Unlocked ✨',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.5,
+                          ),
+                        ),
+                      ),
+                      if (!alreadyConfirmed)
+                        TextButton(
+                          onPressed: _confirming ? null : _handleConfirmMit,
+                          style: TextButton.styleFrom(
+                            backgroundColor: _BondPageState._purple,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            minimumSize: Size.zero,
+                          ),
+                          child: const Text(
+                            'Unlock Mit',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (alreadyConfirmed) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Waiting for ${other.displayName} to confirm sacred Mit bond.',
+                      style: const TextStyle(
+                        color: _BondPageState._mutedText,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -821,7 +995,7 @@ class _BondCardState extends State<_BondCard> {
 
           const SizedBox(height: 16),
 
-          // Open chat button
+          // Full-width purple "Open chat" button
           SizedBox(
             height: 52,
             child: ElevatedButton(
@@ -841,7 +1015,7 @@ class _BondCardState extends State<_BondCard> {
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
               child: const Text(
@@ -860,89 +1034,102 @@ class _BondCardState extends State<_BondCard> {
 }
 
 class _MitJourneyStepper extends StatelessWidget {
-  final int currentStage; // 1..3
+  final int currentStage; // 1 = Chinari, 2 = Saathi, 3 = Mit
 
   const _MitJourneyStepper({required this.currentStage});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Column(
-        children: [
-          // Row of circles connected edge-to-edge by lines
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22),
-            child: Row(
-              children: [
-                _circleNode(1),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: currentStage >= 2
-                        ? _BondPageState._purple
-                        : _BondPageState._mutedCircle,
-                  ),
-                ),
-                _circleNode(2),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: currentStage >= 3
-                        ? _BondPageState._purple
-                        : _BondPageState._mutedCircle,
-                  ),
-                ),
-                _circleNode(3),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Labels aligned under each circle
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 26),
+          child: Row(
             children: [
-              for (int i = 0; i < BondModel.stageNames.length; i++)
-                SizedBox(
-                  width: 72,
-                  child: Text(
-                    BondModel.stageNames[i],
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: (i + 1) <= currentStage
-                          ? Colors.white
-                          : _BondPageState._mutedText,
-                      fontSize: 14,
-                      fontWeight: (i + 1) <= currentStage
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
-                  ),
+              _buildCircle(1, isReached: currentStage >= 1),
+              Expanded(
+                child: Container(
+                  height: 2,
+                  color: currentStage >= 2
+                      ? _BondPageState._purple
+                      : _BondPageState._cardBorder,
                 ),
+              ),
+              _buildCircle(2, isReached: currentStage >= 2),
+              Expanded(
+                child: Container(
+                  height: 2,
+                  color: currentStage >= 3
+                      ? _BondPageState._purple
+                      : _BondPageState._cardBorder,
+                ),
+              ),
+              _buildCircle(
+                3,
+                isReached: currentStage >= 3,
+                isUnlocked: currentStage >= 2,
+              ),
             ],
           ),
-        ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildLabel('Chinari', isReached: currentStage >= 1),
+            ),
+            Expanded(
+              child: _buildLabel('Saathi', isReached: currentStage >= 2),
+            ),
+            Expanded(
+              child: _buildLabel(
+                currentStage >= 2 ? 'Mit' : 'Mit 🔒',
+                isReached: currentStage >= 3,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircle(
+    int stepNumber, {
+    required bool isReached,
+    bool isUnlocked = true,
+  }) {
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isReached
+            ? _BondPageState._purple
+            : _BondPageState._mutedCircle,
+        shape: BoxShape.circle,
+        border: (!isReached && isUnlocked && stepNumber == 3)
+            ? Border.all(color: _BondPageState._purple, width: 1.5)
+            : null,
+      ),
+      child: Text(
+        '$stepNumber',
+        style: TextStyle(
+          color: isReached ? Colors.white : _BondPageState._mutedText,
+          fontSize: 13.5,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
 
-  Widget _circleNode(int step) {
-    final active = step <= currentStage;
-    return Container(
-      width: 28,
-      height: 28,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active ? _BondPageState._purple : _BondPageState._mutedCircle,
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        '$step',
-        style: TextStyle(
-          color: active ? Colors.white : _BondPageState._mutedText,
-          fontSize: 13.5,
-          fontWeight: FontWeight.bold,
-        ),
+  Widget _buildLabel(String text, {required bool isReached}) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: isReached ? Colors.white : _BondPageState._mutedText,
+        fontSize: 14,
+        fontWeight: isReached ? FontWeight.bold : FontWeight.w500,
       ),
     );
   }
