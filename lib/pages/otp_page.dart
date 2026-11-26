@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/phone_auth_service.dart';
 import '../widgets/auth_widgets.dart';
 import 'home_page.dart';
+import 'profile_setup_page.dart';
 
 enum AuthMode { login, register }
 
@@ -76,13 +77,31 @@ class _OtpPageState extends State<OtpPage> {
 
     try {
       final cred = await widget.service.verifyCode(_code.text);
+      final isNew = cred.additionalUserInfo?.isNewUser ?? false;
+
+      // Logging in with a number that has no account.
+      if (widget.mode == AuthMode.login && isNew) {
+        await widget.service.discardNewUser(cred);
+        if (mounted) Navigator.pop(context, 'not_registered');
+        return;
+      }
+
       if (widget.mode == AuthMode.register) {
         await widget.service.saveProfile(cred);
+      } else {
+        await widget.service.indexPhone(cred);
       }
+
+      final uid = cred.user?.uid;
+      final done =
+      uid == null ? false : await widget.service.isProfileComplete(uid);
       if (!mounted) return;
+
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
+        MaterialPageRoute(
+          builder: (_) => done ? const HomePage() : const ProfileSetupPage(),
+        ),
             (route) => false,
       );
     } on PhoneAuthException catch (e) {
@@ -125,74 +144,83 @@ class _OtpPageState extends State<OtpPage> {
     }
   }
 
+  Widget _box(int i, String text) {
+    final filled = i < text.length;
+    final active = i == text.length && _focus.hasFocus;
+    final color = _error != null
+        ? AuthColors.error
+        : (filled || active)
+        ? AuthColors.primary
+        : AuthColors.border;
+
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AuthColors.field,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color,
+          width: (filled || active || _error != null) ? 1.8 : 1,
+        ),
+      ),
+      child: Text(
+        filled ? text[i] : '',
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w600,
+          color: AuthColors.ink,
+        ),
+      ),
+    );
+  }
+
   Widget _boxes() {
     final text = _code.text;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _focus.requestFocus(),
-      child: Stack(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(_length, (i) {
-              final active = i == text.length && _focus.hasFocus;
-              final color = _error != null
-                  ? AuthColors.error
-                  : active
-                  ? AuthColors.primary
-                  : AuthColors.border;
-              return Container(
-                width: 46,
-                height: 56,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: color,
-                    width: active || _error != null ? 1.8 : 1,
-                  ),
-                ),
-                child: Text(
-                  i < text.length ? text[i] : '',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: AuthColors.ink,
-                  ),
-                ),
-              );
-            }),
-          ),
-          // Invisible field that actually receives the typing / SMS autofill.
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0,
-              child: TextField(
-                controller: _code,
-                focusNode: _focus,
-                autofocus: true,
-                enabled: !_verifying,
-                keyboardType: TextInputType.number,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                enableInteractiveSelection: false,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(_length),
+      child: SizedBox(
+        height: 58,
+        child: Stack(
+          children: [
+            Row(
+              children: [
+                for (var i = 0; i < _length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: _box(i, text)),
                 ],
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  counterText: '',
+              ],
+            ),
+            // Invisible field that receives the typing and SMS autofill.
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0,
+                child: TextField(
+                  controller: _code,
+                  focusNode: _focus,
+                  autofocus: true,
+                  enabled: !_verifying,
+                  keyboardType: TextInputType.number,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  enableInteractiveSelection: false,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(_length),
+                  ],
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    counterText: '',
+                  ),
+                  onChanged: (v) {
+                    setState(() => _error = null);
+                    if (v.length == _length) _verify();
+                  },
                 ),
-                onChanged: (v) {
-                  setState(() => _error = null);
-                  if (v.length == _length) _verify();
-                },
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -200,8 +228,10 @@ class _OtpPageState extends State<OtpPage> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
+      centered: true,
+      showBack: false,
       title: 'Enter the code',
-      subtitle: 'We sent a 6-digit code to +977 ${widget.phone}.',
+      subtitle: 'Sent to +977 ${widget.phone}',
       children: [
         _boxes(),
         if (_error != null) ErrorLine(_error!),
@@ -213,26 +243,27 @@ class _OtpPageState extends State<OtpPage> {
           onPressed: _verify,
         ),
         const SizedBox(height: 12),
-        Center(
-          child: _seconds > 0
-              ? Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'Resend code in 0:${_seconds.toString().padLeft(2, '0')}',
-              style: const TextStyle(
-                fontSize: 14,
-                color: AuthColors.muted,
-              ),
+        _seconds > 0
+            ? Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'Resend code in 0:${_seconds.toString().padLeft(2, '0')}',
+            style: const TextStyle(
+              fontSize: 15,
+              color: AuthColors.muted,
             ),
-          )
-              : TextButton(
-            onPressed: _resending ? null : _resend,
-            style: TextButton.styleFrom(
-              foregroundColor: AuthColors.primary,
-            ),
-            child: Text(
-              _resending ? 'Sending...' : 'Resend code',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        )
+            : TextButton(
+          onPressed: _resending ? null : _resend,
+          style: TextButton.styleFrom(
+            foregroundColor: AuthColors.ink,
+          ),
+          child: Text(
+            _resending ? 'Sending...' : 'Resend code',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

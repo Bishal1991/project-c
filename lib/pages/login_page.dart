@@ -36,6 +36,16 @@ class _LoginPageState extends State<LoginPage> {
 
   bool get _valid => RegExp(r'^\d{10}$').hasMatch(_phone.text);
 
+  void _showNotRegistered() {
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _notRegistered = true;
+      _error =
+      "We don't have an account for this number. Check it, or create an account.";
+    });
+  }
+
   Future<void> _sendCode() async {
     if (_loading) return;
     if (!_valid) {
@@ -51,37 +61,42 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final exists = await _service.isRegistered(_phone.text);
-      if (!exists) {
-        if (mounted) {
-          setState(() {
-            _notRegistered = true;
-            _error =
-            "We don't have an account for this number. Check it, or create an account.";
-          });
-        }
+      if (exists == false) {
+        _showNotRegistered();
         return;
       }
-
       await _service.sendCode(_phone.text);
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => OtpPage(
-            phone: _phone.text,
-            service: _service,
-            mode: AuthMode.login,
-          ),
-        ),
-      );
     } on PhoneAuthException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+      return;
     } catch (e) {
       debugPrint('Send code failed: $e');
-      if (mounted) setState(() => _error = 'Something went wrong. Try again.');
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() {
+        _loading = false;
+        _error = 'Something went wrong. Try again.';
+      });
+      return;
     }
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OtpPage(
+          phone: _phone.text,
+          service: _service,
+          mode: AuthMode.login,
+        ),
+      ),
+    );
+
+    // The code page found out this number has no account.
+    if (result == 'not_registered') _showNotRegistered();
   }
 
   void _goToRegister() {
