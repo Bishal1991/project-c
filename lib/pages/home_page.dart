@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
-import '../widgets/bonds_widget.dart';
+import '../services/bond_service.dart';
 import '../widgets/chat_list_widget.dart';
+import 'bond_page.dart';
 import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -13,12 +14,14 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _authService = AuthService();
+  final _bondService = BondService();
   int _currentIndex = 1; // Default to Bonds tab so user sees their Mit Journey
 
-  static const _darkBg = Color(0xFF0F0D1D);
-  static const _navBg = Color(0xFF131124);
-  static const _purple = Color(0xFF7C5CFC);
-  static const _muted = Color(0xFF9A96B0);
+  static const _darkBg = Color(0xFF110E20);
+  static const _navBg = Color(0xFF120F21);
+  static const _navBorder = Color(0xFF262238);
+  static const _purple = Color(0xFF7B5CFA);
+  static const _muted = Color(0xFF9C96B3);
 
   @override
   void initState() {
@@ -138,7 +141,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Order matches mockup: 0=Home, 1=Bonds, 2=Events, 3=Chat, 4=Me
+  // Order matches design: 0=Home, 1=Bonds, 2=Events, 3=Chat, 4=Me
   Widget _buildTab(int index) {
     switch (index) {
       case 0:
@@ -149,7 +152,7 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       case 1:
-        return const BondsWidget();
+        return const BondPage();
       case 2:
         return const Center(
           child: Text(
@@ -183,60 +186,104 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _badgedIcon(IconData iconData, int count) {
+    if (count <= 0) return Icon(iconData);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(iconData),
+        Positioned(
+          right: -9,
+          top: -5,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: _purple,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+            alignment: Alignment.center,
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isBondsTab = _currentIndex == 1;
     return Scaffold(
       backgroundColor: isBondsTab ? _darkBg : null,
-      appBar: AppBar(
-        title: Text(
-          _getTabTitle(_currentIndex),
-          style: isBondsTab
-              ? const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                )
-              : null,
-        ),
-        backgroundColor: isBondsTab ? _darkBg : null,
-        elevation: isBondsTab ? 0 : 1,
-      ),
+      appBar: isBondsTab
+          ? null
+          : AppBar(
+              title: Text(_getTabTitle(_currentIndex)),
+              elevation: 1,
+            ),
       body: _buildTab(_currentIndex),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: _navBg,
-        selectedItemColor: _purple,
-        unselectedItemColor: _muted,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_border),
-            activeIcon: Icon(Icons.favorite),
-            label: 'Bonds',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined),
-            activeIcon: Icon(Icons.calendar_today),
-            label: 'Events',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
-            label: 'Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Me',
-          ),
-        ],
+      bottomNavigationBar: StreamBuilder<Map<String, int>>(
+        stream: _bondService.getNavBadgesStream(),
+        builder: (context, badgeSnap) {
+          final eventsCount = badgeSnap.data?['eventsCount'] ?? 0;
+          final chatsCount = badgeSnap.data?['chatsCount'] ?? 0;
+
+          return Container(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: _navBorder, width: 1)),
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) => setState(() => _currentIndex = index),
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: _navBg,
+              selectedItemColor: _purple,
+              unselectedItemColor: _muted,
+              selectedLabelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 12),
+              items: [
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.home_outlined),
+                  activeIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.favorite_border),
+                  activeIcon: Icon(Icons.favorite_border),
+                  label: 'Bonds',
+                ),
+                BottomNavigationBarItem(
+                  icon: _badgedIcon(
+                    Icons.calendar_today_outlined,
+                    eventsCount,
+                  ),
+                  activeIcon: _badgedIcon(Icons.calendar_today, eventsCount),
+                  label: 'Events',
+                ),
+                BottomNavigationBarItem(
+                  icon: _badgedIcon(Icons.chat_bubble_outline, chatsCount),
+                  activeIcon: _badgedIcon(Icons.chat_bubble, chatsCount),
+                  label: 'Chat',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.person_outline),
+                  activeIcon: Icon(Icons.person),
+                  label: 'Me',
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

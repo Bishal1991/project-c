@@ -1,5 +1,60 @@
 import 'user_model.dart';
 
+class BondStageInfo {
+  final int stage;
+  final String name;
+  final String subtitle;
+  final String description;
+
+  const BondStageInfo({
+    required this.stage,
+    required this.name,
+    required this.subtitle,
+    required this.description,
+  });
+
+  factory BondStageInfo.fromJson(Map<String, dynamic> json) {
+    return BondStageInfo(
+      stage: (json['stage'] as num?)?.toInt() ?? 1,
+      name: json['name'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+    );
+  }
+}
+
+class FestivalModel {
+  final int id;
+  final String name;
+  final String community;
+  final String region;
+  final String eventDate;
+  final String? etiquetteNotes;
+  final String? description;
+
+  const FestivalModel({
+    required this.id,
+    required this.name,
+    required this.community,
+    required this.region,
+    required this.eventDate,
+    this.etiquetteNotes,
+    this.description,
+  });
+
+  factory FestivalModel.fromJson(Map<String, dynamic> json) {
+    return FestivalModel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name'] as String? ?? '',
+      community: json['community'] as String? ?? '',
+      region: json['region'] as String? ?? '',
+      eventDate: json['event_date'] as String? ?? '',
+      etiquetteNotes: json['etiquette_notes'] as String?,
+      description: json['description'] as String?,
+    );
+  }
+}
+
 class BondModel {
   static const stageNames = ['Chinari', 'Saathi', 'Mit'];
 
@@ -10,6 +65,7 @@ class BondModel {
   final DateTime createdAt;
   final int festivalsShared;
   final int messageCount;
+  final int? upcomingFestivalId;
   final String? upcomingEventTitle;
   final String? upcomingEventDate;
   final String? upcomingEventNote;
@@ -24,6 +80,7 @@ class BondModel {
     this.matchReason,
     this.festivalsShared = 0,
     this.messageCount = 0,
+    this.upcomingFestivalId,
     this.upcomingEventTitle,
     this.upcomingEventDate,
     this.upcomingEventNote,
@@ -62,6 +119,7 @@ class BondModel {
       createdAt: createdAt,
       festivalsShared: (json['festivals_shared'] as num?)?.toInt() ?? 0,
       messageCount: (json['message_count'] as num?)?.toInt() ?? 0,
+      upcomingFestivalId: (json['upcoming_festival_id'] as num?)?.toInt(),
       upcomingEventTitle: json['upcoming_event_title'] as String?,
       upcomingEventDate: json['upcoming_event_date'] as String?,
       upcomingEventNote: json['upcoming_event_note'] as String?,

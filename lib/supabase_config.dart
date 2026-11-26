@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase/supabase.dart';
 
 class SupabaseConfig {
   static const String url = String.fromEnvironment(
@@ -13,7 +13,7 @@ class SupabaseConfig {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmbnpkbHFyc2h1Y3FqcXNkY3BtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0OTEwNDEsImV4cCI6MjExMTA2NzA0MX0.8hFOv-sDYXmXWw5sY5Yd4tVN3N2TPu1GygUAjM3R3Qg',
   );
 
-  static SupabaseClient get client => Supabase.instance.client;
+  static final SupabaseClient client = SupabaseClient(url, anonKey);
 
   static final _refreshController = StreamController<void>.broadcast();
 

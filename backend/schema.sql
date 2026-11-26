@@ -767,3 +767,149 @@ BEGIN
   RETURN jsonb_build_object('bondId', v_bond_id, 'created', v_inserted);
 END;
 $$;
+
+-- ============================================================================
+-- Dynamic Bond Stages, Festival Scheduling, Discoverable Users, & Nav Badges
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.bond_stages (
+  stage SMALLINT PRIMARY KEY,
+  name TEXT NOT NULL,
+  subtitle TEXT NOT NULL,
+  description TEXT NOT NULL
+);
+
+ALTER TABLE public.bond_stages ENABLE ROW LEVEL SECURITY;
+
+INSERT INTO public.bond_stages (stage, name, subtitle, description) VALUES
+  (1, 'Chinari', 'Acquaintance & Cultural Introduction', 'You have connected across communities. Chat, share stories, and learn about each other''s traditions and festivals.'),
+  (2, 'Saathi', 'Trusted Companion', 'You have met in person at a cultural festival or event and both confirmed it. Your friendship now bridges both communities.'),
+  (3, 'Mit', 'Sacred Miteri Bond', 'A lifelong cultural kinship chosen mutually after sharing festivals and milestones together.')
+ON CONFLICT (stage) DO UPDATE SET
+  name = EXCLUDED.name,
+  subtitle = EXCLUDED.subtitle,
+  description = EXCLUDED.description;
+
+CREATE OR REPLACE FUNCTION public.set_bond_festival(
+  p_bond_id TEXT,
+  p_user_uid TEXT,
+  p_festival_id INT,
+  p_note TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  v_bond public.bonds;
+  v_fest public.festivals;
+  v_guest_uid TEXT;
+BEGIN
+  SELECT * INTO v_bond FROM public.bonds WHERE id = p_bond_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Bond not found';
+  END IF;
+
+  IF p_festival_id IS NULL THEN
+    UPDATE public.bonds
+    SET upcoming_festival_id = NULL,
+        upcoming_event_note = NULL,
+        updated_at = NOW()
+    WHERE id = p_bond_id;
+    RETURN jsonb_build_object('ok', true);
+  END IF;
+
+  SELECT * INTO v_fest FROM public.festivals WHERE id = p_festival_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Festival not found';
+  END IF;
+
+  v_guest_uid := CASE WHEN v_bond.user1_uid = p_user_uid THEN v_bond.user2_uid ELSE v_bond.user1_uid END;
+
+  UPDATE public.bonds
+  SET upcoming_festival_id = p_festival_id,
+      upcoming_event_note = COALESCE(
+        NULLIF(p_note, ''),
+        CASE
+          WHEN v_bond.stage = 1 THEN 'After you meet, you both confirm it to reach Saathi.'
+          WHEN v_bond.stage = 2 THEN 'After you meet, you both confirm it. Mit is a choice for later.'
+          ELSE 'Celebrating your Miteri bond together.'
+        END
+      ),
+      updated_at = NOW()
+  WHERE id = p_bond_id;
+
+  INSERT INTO public.festival_invitations (bond_id, festival_id, host_uid, guest_uid, status)
+  VALUES (p_bond_id, p_festival_id, p_user_uid, v_guest_uid, 'accepted');
+
+  INSERT INTO public.bond_history (bond_id, entry)
+  VALUES (p_bond_id, 'Planned ' || v_fest.name || ' (' || v_fest.event_date || ')');
+
+  RETURN jsonb_build_object('ok', true, 'festival', v_fest.name);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_nav_badges(p_uid TEXT)
+RETURNS JSONB
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'eventsCount', (
+      SELECT COUNT(*)::INT
+      FROM public.bonds b
+      WHERE (b.user1_uid = p_uid OR b.user2_uid = p_uid)
+        AND b.stage >= 1
+        AND b.upcoming_festival_id IS NOT NULL
+    ),
+    'chatsCount', (
+      SELECT COUNT(*)::INT
+      FROM public.bonds b
+      WHERE (b.user1_uid = p_uid OR b.user2_uid = p_uid)
+        AND b.stage >= 1
+        AND EXISTS (
+          SELECT 1 FROM public.messages m
+          WHERE m.bond_id = b.id
+            AND m.sender_uid <> p_uid
+            AND m.created_at = (
+              SELECT MAX(m2.created_at) FROM public.messages m2 WHERE m2.bond_id = b.id
+            )
+        )
+    )
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_discoverable_users(p_uid TEXT)
+RETURNS JSONB
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT COALESCE(
+    jsonb_agg(row_to_json(t)::jsonb),
+    '[]'::jsonb
+  )
+  FROM (
+    SELECT
+      u.uid,
+      u.display_name AS "displayName",
+      u.email,
+      u.phone_number AS "phoneNumber",
+      u.photo_url AS "photoUrl",
+      u.community,
+      u.region,
+      u.bio,
+      u.interests
+    FROM public.users u
+    WHERE u.uid <> p_uid
+      AND NOT EXISTS (
+        SELECT 1 FROM public.bonds b
+        WHERE (b.user1_uid = p_uid AND b.user2_uid = u.uid)
+           OR (b.user1_uid = u.uid AND b.user2_uid = p_uid)
+      )
+    ORDER BY u.created_at DESC
+    LIMIT 50
+  ) t;
+$$;

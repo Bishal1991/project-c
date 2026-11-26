@@ -48,3 +48,5 @@ app.*.map.json
 # Local Node backend
 backend/node_modules/
 backend/.env
+# Widget Preview related
+.widget_preview/
