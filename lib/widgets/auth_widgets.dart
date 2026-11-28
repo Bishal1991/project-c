@@ -118,124 +118,42 @@ class AuthScaffold extends StatelessWidget {
   }
 }
 
-/// "+977" box and a 10-digit number field. Both turn red when [hasError].
-class PhoneField extends StatelessWidget {
-  const PhoneField({
-    super.key,
-    required this.controller,
-    this.focusNode,
-    this.hasError = false,
-    this.enabled = true,
-    this.onChanged,
-    this.onSubmitted,
-  });
-
-  final TextEditingController controller;
-  final FocusNode? focusNode;
-  final bool hasError;
-  final bool enabled;
-  final ValueChanged<String>? onChanged;
-  final ValueChanged<String>? onSubmitted;
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor = hasError ? AuthColors.error : AuthColors.border;
-    final width = hasError ? 1.5 : 1.0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Mobile number', style: AuthText.label),
-        const SizedBox(height: 8),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                width: 68,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AuthColors.field,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: borderColor, width: width),
-                ),
-                child: const Text(
-                  '+977',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AuthColors.ink,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  enabled: enabled,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.done,
-                  cursorColor: AuthColors.primary,
-                  autofillHints: const [AutofillHints.telephoneNumberNational],
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(10),
-                  ],
-                  onChanged: onChanged,
-                  onSubmitted: onSubmitted,
-                  style: const TextStyle(fontSize: 15, color: AuthColors.ink),
-                  decoration: InputDecoration(
-                    hintText: '98XX XXX XXX',
-                    hintStyle: const TextStyle(color: AuthColors.muted),
-                    filled: true,
-                    fillColor: AuthColors.field,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 16,
-                    ),
-                    border: _outline(borderColor, width),
-                    enabledBorder: _outline(borderColor, width),
-                    disabledBorder: _outline(AuthColors.border, 1),
-                    focusedBorder: _outline(
-                      hasError ? AuthColors.error : AuthColors.primary,
-                      1.8,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Labeled text field (name, age, college...).
+/// Labeled text field (username, email, name, age...).
 class DarkField extends StatelessWidget {
   const DarkField({
     super.key,
     required this.label,
     required this.controller,
+    this.focusNode,
     this.enabled = true,
     this.error,
     this.helper,
     this.keyboardType,
     this.formatters,
     this.capitalization = TextCapitalization.none,
+    this.obscure = false,
+    this.suffix,
+    this.hints,
+    this.action,
     this.onChanged,
+    this.onSubmitted,
   });
 
   final String label;
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final bool enabled;
   final String? error;
   final String? helper;
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? formatters;
   final TextCapitalization capitalization;
+  final bool obscure;
+  final Widget? suffix;
+  final Iterable<String>? hints;
+  final TextInputAction? action;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -250,16 +168,24 @@ class DarkField extends StatelessWidget {
         const SizedBox(height: 8),
         TextField(
           controller: controller,
+          focusNode: focusNode,
           enabled: enabled,
           keyboardType: keyboardType,
+          textInputAction: action,
           inputFormatters: formatters,
           textCapitalization: capitalization,
+          obscureText: obscure,
+          enableSuggestions: !obscure,
+          autocorrect: !obscure,
+          autofillHints: hints,
           cursorColor: AuthColors.primary,
           onChanged: onChanged,
+          onSubmitted: onSubmitted,
           style: const TextStyle(fontSize: 16, color: AuthColors.ink),
           decoration: InputDecoration(
             filled: true,
             fillColor: AuthColors.field,
+            suffixIcon: suffix,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 17,
@@ -284,6 +210,66 @@ class DarkField extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Password field with a show/hide eye.
+class PasswordField extends StatefulWidget {
+  const PasswordField({
+    super.key,
+    required this.controller,
+    this.label = 'Password',
+    this.enabled = true,
+    this.error,
+    this.helper,
+    this.newPassword = false,
+    this.action = TextInputAction.done,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final bool enabled;
+  final String? error;
+  final String? helper;
+  final bool newPassword;
+  final TextInputAction action;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  State<PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<PasswordField> {
+  bool _hide = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return DarkField(
+      label: widget.label,
+      controller: widget.controller,
+      enabled: widget.enabled,
+      error: widget.error,
+      helper: widget.helper,
+      obscure: _hide,
+      keyboardType: TextInputType.visiblePassword,
+      action: widget.action,
+      hints: [
+        widget.newPassword ? AutofillHints.newPassword : AutofillHints.password,
+      ],
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      suffix: IconButton(
+        tooltip: _hide ? 'Show password' : 'Hide password',
+        icon: Icon(
+          _hide ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          color: AuthColors.muted,
+        ),
+        onPressed: () => setState(() => _hide = !_hide),
+      ),
     );
   }
 }

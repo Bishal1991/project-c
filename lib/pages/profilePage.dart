@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/auth_widgets.dart';
 import 'editprofilepage.dart';
-import 'login_page.dart';
+import 'welcome_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -27,9 +27,9 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  void _goToLogin(BuildContext context) {
+  void _goToWelcome(BuildContext context) {
     Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
+      MaterialPageRoute(builder: (_) => const WelcomePage()),
           (route) => false,
     );
   }
@@ -38,6 +38,7 @@ class ProfilePage extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: AuthColors.field,
         title: const Text('Log out?'),
         content: const Text(
           'You will need your phone number and a new code to log in again.',
@@ -61,7 +62,7 @@ class ProfilePage extends StatelessWidget {
 
     await FirebaseAuth.instance.signOut();
     if (!context.mounted) return;
-    _goToLogin(context);
+    _goToWelcome(context);
   }
 
   @override
@@ -78,11 +79,14 @@ class ProfilePage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('You are logged out.'),
+                const Text(
+                  'You are logged out.',
+                  style: TextStyle(color: AuthColors.ink),
+                ),
                 const SizedBox(height: 16),
                 PrimaryButton(
                   label: 'Log in',
-                  onPressed: () => _goToLogin(context),
+                  onPressed: () => _goToWelcome(context),
                 ),
               ],
             ),
@@ -101,6 +105,7 @@ class ProfilePage extends StatelessWidget {
                   child: Text(
                     'Could not load your profile. Check your connection and try again.',
                     textAlign: TextAlign.center,
+                    style: TextStyle(color: AuthColors.muted),
                   ),
                 ),
               );
@@ -119,23 +124,24 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
+  List<String> _list(dynamic v) =>
+      (v as List?)?.map((e) => e.toString()).toList() ?? <String>[];
+
   Widget _content(BuildContext context, Map<String, dynamic> data) {
     final name = (data['name'] as String?)?.trim() ?? '';
     final age = data['age']?.toString() ?? '';
-    final city = (data['city'] as String?)?.trim() ?? '';
-    final area = (data['area'] as String?)?.trim() ?? '';
-    final languages =
-        (data['languages'] as List?)?.map((e) => e.toString()).toList() ??
-            <String>[];
+    final college = (data['college'] as String?)?.trim() ?? '';
+    final region = (data['homeRegion'] as String?)?.trim() ?? '';
+    final interests = _list(data['interests']);
+    final festivals = _list(data['festivals']);
 
     final details =
-    [age, city, area].where((s) => s.isNotEmpty).join(' · ');
+    [age, college, region].where((s) => s.isNotEmpty).join(' · ');
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Expanded(child: Text('My profile', style: AuthText.heading)),
             TextButton(
@@ -157,14 +163,14 @@ class ProfilePage extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 45,
-              backgroundColor: const Color(0xFFE9E4F8),
+              backgroundColor: const Color(0xFF2A2350),
               child: Text(
                 name.isEmpty ? '?' : name[0].toUpperCase(),
                 style: const TextStyle(
                   fontFamily: 'serif',
                   fontSize: 36,
                   fontWeight: FontWeight.w700,
-                  color: AuthColors.primary,
+                  color: Color(0xFFC9B8F5),
                 ),
               ),
             ),
@@ -196,13 +202,20 @@ class ProfilePage extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 28),
-        const _SectionLabel('Privacy'),
+        const _SectionLabel('About you'),
         _NavRow(
-          title: 'Languages',
-          trailing: languages.isEmpty ? 'Add' : languages.join(', '),
+          title: 'Interests',
+          trailing: interests.isEmpty ? 'Add' : interests.join(', '),
           onTap: () => _edit(context, data),
         ),
         const _Line(),
+        _NavRow(
+          title: 'Festivals',
+          trailing: festivals.isEmpty ? 'Add' : festivals.join(', '),
+          onTap: () => _edit(context, data),
+        ),
+        const _Line(),
+        const _SectionLabel('Privacy'),
         _NavRow(
           title: 'Privacy & safety',
           onTap: () => _comingSoon(context),
@@ -232,7 +245,7 @@ class ProfilePage extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(top: 16),
           child: Text(
-            'Others see only your city. Your place is shown only after you both say namaste.',
+            'Others see only your region. Your place is shown only after you both say namaste.',
             style: TextStyle(
               fontSize: 13,
               height: 1.5,
@@ -281,18 +294,18 @@ class _NavRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Row(
           children: [
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontSize: 16, color: AuthColors.ink),
-              ),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, color: AuthColors.ink),
             ),
             if (trailing != null)
-              Flexible(
+              Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 12),
+                  padding: const EdgeInsets.only(left: 16),
                   child: Text(
                     trailing!,
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 14,
@@ -300,12 +313,11 @@ class _NavRow extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
+              )
+            else
+              const Spacer(),
             const SizedBox(width: 8),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AuthColors.muted,
-            ),
+            const Icon(Icons.chevron_right_rounded, color: AuthColors.muted),
           ],
         ),
       ),

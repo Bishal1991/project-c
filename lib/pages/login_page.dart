@@ -1,148 +1,211 @@
 import 'package:flutter/material.dart';
 
-import '../services/phone_auth_service.dart';
+import '../services/email_auth_service.dart';
 import '../widgets/auth_widgets.dart';
-import 'otp_page.dart';
+import 'home_page.dart';
+import 'profile_setup_page.dart';
 import 'register_page.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, this.initialPhone});
 
-  final String? initialPhone;
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key, this.initialEmail});
+
+  final String? initialEmail;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
-  late final TextEditingController _phone;
-  final _service = PhoneAuthService();
+  late final TextEditingController _email;
+  final _password = TextEditingController();
+  final _service = EmailAuthService();
 
   bool _loading = false;
-  bool _notRegistered = false;
+  bool _submitted = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _phone = TextEditingController(text: widget.initialPhone);
+    _email = TextEditingController(text: widget.initialEmail);
   }
 
   @override
   void dispose() {
-    _phone.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  bool get _valid => RegExp(r'^\d{10}$').hasMatch(_phone.text);
+  bool get _emailOk => EmailAuthService.validEmail(_email.text.trim());
+  bool get _passwordOk => _password.text.isNotEmpty;
 
-  void _showNotRegistered() {
-    if (!mounted) return;
+  Future<void> _login() async {
+    if (_loading) return;
     setState(() {
-      _loading = false;
-      _notRegistered = true;
-      _error =
-      "We don't have an account for this number. Check it, or create an account.";
+      _submitted = true;
+      _error = null;
     });
+    if (!_emailOk || !_passwordOk) return;
+
+    setState(() => _loading = true);
+    try {
+      final cred = await _service.signIn(
+        email: _email.text,
+        password: _password.text,
+      );
+      final uid = cred.user?.uid;
+      final done = uid == null ? false : await _service.isProfileComplete(uid);
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => done ? const HomePage() : const ProfileSetupPage(),
+        ),
+            (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      debugPrint('Login failed: $e');
+      if (mounted) setState(() => _error = 'Something went wrong. Try again.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Future<void> _sendCode() async {
-    if (_loading) return;
-    if (!_valid) {
-      setState(() => _error = 'Enter a 10-digit mobile number.');
+  Future<void> _forgotPassword() async {
+    final controller = TextEditingController(text: _email.text.trim());
+
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AuthColors.field,
+        title: const Text('Reset password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your email and we will send you a reset link.',
+              style: TextStyle(color: AuthColors.muted),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.emailAddress,
+              cursorColor: AuthColors.primary,
+              style: const TextStyle(color: AuthColors.ink),
+              decoration: InputDecoration(
+                hintText: 'you@example.com',
+                hintStyle: const TextStyle(color: AuthColors.muted),
+                filled: true,
+                fillColor: AuthColors.bg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AuthColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AuthColors.primary,
+                    width: 1.8,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send link'),
+          ),
+        ],
+      ),
+    );
+
+    if (send != true || !mounted) return;
+    final email = controller.text.trim();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (!EmailAuthService.validEmail(email)) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Enter a valid email address.')),
+      );
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-      _notRegistered = false;
-    });
 
     try {
-      final exists = await _service.isRegistered(_phone.text);
-      if (exists == false) {
-        _showNotRegistered();
-        return;
-      }
-      await _service.sendCode(_phone.text);
-    } on PhoneAuthException catch (e) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = e.message;
-      });
-      return;
+      await _service.sendPasswordReset(email);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Reset link sent. Check your email.')),
+      );
+    } on AuthException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
-      debugPrint('Send code failed: $e');
-      if (mounted) setState(() {
-        _loading = false;
-        _error = 'Something went wrong. Try again.';
-      });
-      return;
+      debugPrint('Reset failed: $e');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Something went wrong. Try again.')),
+      );
     }
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OtpPage(
-          phone: _phone.text,
-          service: _service,
-          mode: AuthMode.login,
-        ),
-      ),
-    );
-
-    // The code page found out this number has no account.
-    if (result == 'not_registered') _showNotRegistered();
-  }
-
-  void _goToRegister() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RegisterPage(initialPhone: _phone.text),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
       title: 'Welcome back',
-      subtitle: 'Enter your mobile number. We will text you a 6-digit code.',
+      subtitle: 'Log in with your email and password.',
       children: [
-        PhoneField(
-          controller: _phone,
-          hasError: _error != null,
+        DarkField(
+          label: 'Email',
+          controller: _email,
           enabled: !_loading,
-          onChanged: (_) {
-            if (_error != null || _notRegistered) {
-              setState(() {
-                _error = null;
-                _notRegistered = false;
-              });
-            }
-          },
-          onSubmitted: (_) => _sendCode(),
+          keyboardType: TextInputType.emailAddress,
+          action: TextInputAction.next,
+          hints: const [AutofillHints.email],
+          error: _submitted && !_emailOk ? 'Enter a valid email address.' : null,
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 18),
+        PasswordField(
+          controller: _password,
+          enabled: !_loading,
+          error: _submitted && !_passwordOk ? 'Enter your password.' : null,
+          onChanged: (_) => setState(() => _error = null),
+          onSubmitted: (_) => _login(),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: _loading ? null : _forgotPassword,
+            style: TextButton.styleFrom(foregroundColor: AuthColors.primary),
+            child: const Text(
+              'Forgot password?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
         if (_error != null) ErrorLine(_error!),
-        const SizedBox(height: 24),
-        PrimaryButton(
-          label: 'Send code',
-          loading: _loading,
-          onPressed: _sendCode,
-        ),
+        const SizedBox(height: 16),
+        PrimaryButton(label: 'Log in', loading: _loading, onPressed: _login),
         const SizedBox(height: 12),
-        if (_notRegistered)
-          SecondaryButton(label: 'Create account', onPressed: _goToRegister)
-        else
-          TextLinkButton(
-            'New here? Create account',
-            onPressed: _loading ? null : _goToRegister,
+        TextLinkButton(
+          'New here? Create account',
+          onPressed: _loading
+              ? null
+              : () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const RegisterPage()),
           ),
+        ),
       ],
     );
   }
